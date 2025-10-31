@@ -75,3 +75,5 @@ curl -s http://localhost:8080/trails/health
 curl -s http://localhost:8080/points/health
 curl -s http://localhost:8080/qr/health
 curl -s http://localhost:8080/leaderboard/health
+
+- [ ] Implement invite flow endpoints in senior PWA (GET/POST /invites/...)
