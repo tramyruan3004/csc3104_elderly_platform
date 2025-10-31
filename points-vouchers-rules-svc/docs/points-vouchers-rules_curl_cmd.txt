@@ -1,0 +1,121 @@
+1. install dependencies
+pip install -r requirements.txt
+
+2. db setup
+docker run -d --name pg-points
+  -e POSTGRES_USER=points -e POSTGRES_PASSWORD=pointspwd -e POSTGRES_DB=points
+  -p 54323:5432 postgres:16
+
+3. real time acess to db to check:
+docker exec -it pg-points psql -U points -d points
+
+4. Run the API server
+python -m uvicorn app.main:app --reload --port 8003
+
+5. API/ microservices testing curl
+# Mint a service token
+SERVICE_TOKEN=$(curl -s http://localhost:8001/auth/service-token \
+  -H "Content-Type: application/json" \
+  -d '{
+    "client_id":"qr-checkin",
+    "client_secret":"superlongrandomsecret",
+    "org_ids": ["'"$ORG_ID"'"],
+    "expires_minutes": 30
+  }' | jq -r '.access_token')
+
+echo "$SERVICE_TOKEN" | cut -c1-60
+
+A. CREATE a rule for a trail (ie. check-in -> 15pts)
+  # An example
+  ORG_ID="71c0cc2f-6129-4f37-8741-6f5cb7d5d4e5" 
+  # Organiser token from auth-svc
+  LOGIN_JSON_ORG=$(curl -s http://localhost:8001/auth/login \
+    -H "Content-Type: application/json" \
+    -d '{"nric":"F1122334Z","passcode":"14062005"}')
+  
+  LOGIN_JSON_ORG=$(curl -s http://localhost:8001/auth/login \
+    -H "Content-Type: application/json" \
+    -d '{
+      "nric": "F1122334Z",
+      "passcode": "14062005"
+    }')
+
+  ACCESS_ORG=$(echo "$LOGIN_JSON_ORG" | jq -r '.tokens.access_token')
+
+  curl -s -X POST "http://localhost:8003/orgs/$ORG_ID/rules" \
+    -H "Authorization: Bearer $ACCESS_ORG" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "type":"checkin",
+      "points":15,
+      "name":"Default Check-in",
+      "description":"15 points per confirmed check-in",
+      "active":true
+    }'
+
+  # List rules for the ORGANISATION 
+  curl -s "http://localhost:8003/orgs/$ORG_ID/rules" \
+    -H "Authorization: Bearer $ACCESS_ORG" | jq
+
+B. Simulate awarding points from a check-in (a rule)
+  # An example 
+  TRAIL_ID="a876d7f9-95f2-42dd-9871-80a7012b3392"
+
+  LOGIN_JSON_ATT=$(curl -s http://localhost:8001/auth/login \
+    -H "Content-Type: application/json" \
+    -d '{"nric":"T9876543A","passcode":"01011980"}')
+  
+  LOGIN_JSON_ATT=$(curl -s http://localhost:8001/auth/login \
+    -H "Content-Type: application/json" \
+    -d '{"nric": "T9876543A","passcode": "01011980"}')
+
+  # Attendee access token from auth-svc
+  ACCESS_ATT=$(echo "$LOGIN_JSON_ATT" | jq -r '.tokens.access_token')
+  USER_ID_ATT=$(echo "$LOGIN_JSON_ATT" | jq -r '.user.id')
+
+  CHECKED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+  # Ingest the check-in → award points
+  curl -s -X POST http://localhost:8003/points/ingest/checkin \
+    -H "Authorization: Bearer $SERVICE_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{
+      \"trail_id\":\"$TRAIL_ID\",
+      \"user_id\":\"$USER_ID_ATT\",
+      \"org_id\":\"$ORG_ID\",
+      \"checked_at\":\"$CHECKED_AT\"
+    }" | jq
+
+C. Attendee views their balance
+  curl -s "http://localhost:8003/points/users/me/balance?org_id=$ORG_ID" \
+    -H "Authorization: Bearer $ACCESS_ATT" | jq
+  Attendee views their ledger
+  curl -s "http://localhost:8003/points/users/me/ledger?org_id=$ORG_ID" \
+    -H "Authorization: Bearer $ACCESS_ATT" | jq
+
+D. Add +50 points to a user (manual bonus)
+  curl -s -X POST "http://localhost:8003/points/orgs/$ORG_ID/adjust?user_id=$USER_ID_ATT&delta=50&reason=manual_bonus" \
+    -H "Authorization: Bearer $ACCESS_ORG" | jq
+
+E. Vouchers — organiser creates; attendee redeems
+  # Organiser creates a voucher
+  curl -s -X POST "http://localhost:8003/vouchers/orgs/$ORG_ID" \
+    -H "Authorization: Bearer $ACCESS_ORG" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "code":"WELCOME-5",
+      "name":"$5 Coffee",
+      "points_cost":20,
+      "total_quantity":100
+    }' | jq
+
+  # Retrieve list of Vouchers
+  curl -s "http://localhost:8003/vouchers?org_id=$ORG_ID" \
+    -H "Authorization: Bearer $ACCESS_ATT" | jq
+
+  # An example
+  VOUCHER_ID="f6f60b68-e7ba-4e7a-a798-e13516ecc1b5"
+
+  # Attendee redeems the voucher with their points (until insufficient points)
+  curl -s -X POST "http://localhost:8003/vouchers/$VOUCHER_ID/redeem" \
+    -H "Authorization: Bearer $ACCESS_ATT" | jq

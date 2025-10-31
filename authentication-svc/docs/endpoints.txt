@@ -1,0 +1,11 @@
+Method	Endpoint	                        Access	    Purpose
+GET	    /health	                            public	    Check service health
+GET	    /auth/jwks	                        public	    RSA public key for JWT verify
+POST	/auth/signup	                    public	    Create new user (organiser / attendee)
+POST	/auth/login	                        public	    Login with NRIC & 8-digit passcode
+POST	/auth/refresh	                    public	    Exchange refresh token for new access
+POST	/auth/logout	                    auth	    Revoke current refresh
+GET	    /users/me	                        auth	    View current logged-in user
+POST	/orgs	                            organiser	Create an organisation
+POST	/orgs/{org_id}/members	            organiser	Add another organiser
+DELETE	/orgs/{org_id}/members/{user_id}	organiser	Remove organiser (optional)

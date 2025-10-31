@@ -1,0 +1,14 @@
+attendee checks balance & ledger
+GET /points/users/me/balance?org_id=...
+GET /points/users/me/ledger?org_id=...
+
+organiser manages rules
+GET/POST/PATCH /orgs/{org_id}/rules
+
+attendee redeems vouchers
+GET /vouchers?org_id=...
+POST /vouchers/{voucher_id}/redeem
+
+organiser creates/updates vouchers
+POST /vouchers/orgs/{org_id}
+PATCH /vouchers/{voucher_id}

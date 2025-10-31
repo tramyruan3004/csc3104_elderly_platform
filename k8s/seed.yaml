@@ -1,0 +1,280 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: play
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: seed-writer
+  namespace: play
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: seed-secret-writer
+  namespace: play
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create", "update", "patch", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: seed-secret-writer-binding
+  namespace: play
+subjects:
+  - kind: ServiceAccount
+    name: seed-writer
+    namespace: play
+roleRef:
+  kind: Role
+  name: seed-secret-writer
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: seed-script
+  namespace: play
+data:
+  seed.sh: |
+    #!/bin/sh
+    set -Eeuo pipefail
+
+    AUTH="http://authentication-svc.play.svc.cluster.local:8001"
+    TRAILS="http://trails-activities-svc.play.svc.cluster.local:8002"
+    POINTS="http://points-vouchers-rules-svc.play.svc.cluster.local:8003"
+    QR_BASE="http://qr-checkin-svc.play.svc.cluster.local:8004"
+    QR_API="$QR_BASE/checkin"
+    LEADER="http://leaderboard-attendance-svc.play.svc.cluster.local:8005"
+
+    SVC_ID="${SERVICE_CLIENT_ID:-qr-checkin}"
+    SVC_SECRET="${SERVICE_CLIENT_SECRET:-superlongrandomsecret}"
+
+    curlj() {
+      m="$1"; url="$2"; token="${3-}"; json="${4-}"; allow="${5-}"
+      out="$(mktemp)"
+      echo ">> $m $url"
+      [ -n "${json:-}" ] && echo "   body: $json"
+      set +e
+      if [ -n "${json:-}" ]; then
+        code=$(curl -sS -X "$m" -w "%{http_code}" -H 'Content-Type: application/json' \
+               ${token:+-H "Authorization: Bearer $token"} --data-raw "$json" "$url" -o "$out")
+      else
+        code=$(curl -sS -X "$m" -w "%{http_code}" ${token:+-H "Authorization: Bearer $token"} "$url" -o "$out")
+      fi
+      rc=$?
+      set -e
+      if [ $rc -ne 0 ] || [ -z "$code" ]; then
+        echo "!! curl failed rc=$rc for $m $url"
+        [ -s "$out" ] && { echo "-- response --"; cat "$out"; echo "------------"; }
+        rm -f "$out"; exit 1
+      fi
+      if [ "$code" -ge 400 ]; then
+        case ",${allow-}," in
+          *,"$code",*) echo "(allowed HTTP $code)";;
+          *) echo "!! HTTP $code for $m $url"
+             [ -s "$out" ] && { echo "-- response --"; cat "$out"; echo "------------"; }
+             rm -f "$out"; exit 1 ;;
+        esac
+      fi
+      [ -s "$out" ] && { cat "$out"; echo; }   # ensure newline between outputs
+      rm -f "$out"
+    }
+
+    # ---- JSON helpers ----
+    is_json() { echo "$1" | jq -e . >/dev/null 2>&1; }
+    jget() { jq -r "$1 // empty"; }
+
+    # ---- Org resolvers (tolerant) ----
+    find_org_id_via_list() {
+      token="$1"; name="$2"
+      body="$(curl -sS -H "Authorization: Bearer $token" "$AUTH/orgs" || true)"
+      is_json "$body" || { echo ""; return; }
+      echo "$body" | jq -r --arg n "$name" 'try (if type=="array" then (map(select(.name==$n))|.[0].id) else empty end) catch empty'
+    }
+    find_org_id_via_me() {
+      token="$1"; name="$2"
+      me="$(curl -sS -H "Authorization: Bearer $token" "$AUTH/users/me" || true)"
+      is_json "$me" || { echo ""; return; }
+      ids="$(echo "$me" | jq -r 'try .org_ids[] catch empty')"
+      for oid in $ids; do
+        obody="$(curl -sS -H "Authorization: Bearer $token" "$AUTH/orgs/$oid" || true)"
+        is_json "$obody" || continue
+        nm="$(echo "$obody" | jq -r 'try .name // empty')"
+        [ "$nm" = "$2" ] && { echo "$oid"; return; }
+      done
+      echo ""
+    }
+    find_org_id_by_name() {
+      token="$1"; name="$2"
+      id="$(find_org_id_via_list "$token" "$name")"
+      [ -n "$id" ] && { echo "$id"; return; }
+      id="$(find_org_id_via_me "$token" "$name")"
+      echo "$id"
+    }
+
+    # Trails resolver (tolerant)
+    find_trail_id_by_title() {
+      org_id="$1"; name="$2"
+      body="$(curl -sS "$TRAILS/trails?org_id=$org_id" || true)"
+      is_json "$body" || { echo ""; return; }
+      echo "$body" | jq -r --arg n "$name" 'try (if type=="array" then (map(select(.title==$n))|.[0].id) else (.items // .data // empty | map(select(.title==$n)) | .[0].id) end) catch empty'
+    }
+
+    echo "==> Waiting for health..."
+    set +e
+    for u in "$AUTH/health" "$TRAILS/health" "$POINTS/health" "$QR_BASE/health" "$LEADER/health"; do echo " - $u"; done
+    tries=0; max_tries=180
+    while :; do
+      ok=1
+      for u in "$AUTH/health" "$TRAILS/health" "$POINTS/health" "$QR_BASE/health" "$LEADER/health"; do
+        code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 --connect-timeout 2 "$u")
+        printf "   %s -> %s\n" "$u" "$code"; [ "$code" = "200" ] || ok=0
+      done
+      [ $ok -eq 1 ] && break
+      tries=$((tries+1)); [ $tries -ge $max_tries ] && { echo "!! health checks did not pass"; exit 1; }
+      sleep 1
+    done
+    set -e
+
+    echo "==> Signing up organisers..."
+    curlj POST "$AUTH/auth/signup" "" '{"name":"Alice","nric":"S1234567D","passcode":"25031999","role":"organiser"}' "409"
+    curlj POST "$AUTH/auth/signup" "" '{"name":"Bob","nric":"S2345678E","passcode":"01011990","role":"organiser"}' "409"
+
+    echo "==> Signing up attendees..."
+    for p in \
+      '{"name":"Tom","nric":"S1111111A","passcode":"01012000","role":"attend_user"}' \
+      '{"name":"Jerry","nric":"S2222222B","passcode":"02022000","role":"attend_user"}' \
+      '{"name":"Moe","nric":"S3333333C","passcode":"03032000","role":"attend_user"}' \
+      '{"name":"Sue","nric":"S4444444D","passcode":"04042000","role":"attend_user"}'
+    do curlj POST "$AUTH/auth/signup" "" "$p" "409"; done
+
+    echo "==> Logging in organisers..."
+    raw=$(curl -sS -X POST "$AUTH/auth/login" -H 'Content-Type: application/json' --data-raw '{"nric":"S1234567D","passcode":"25031999"}')
+    TOK_A=$(printf '%s' "$raw" | jq -r 'try .tokens.access_token // .access_token // empty')
+    [ -n "${TOK_A:-}" ] || { echo "!! Login failed for Alice; resp: $raw"; exit 1; }
+    raw=$(curl -sS -X POST "$AUTH/auth/login" -H 'Content-Type: application/json' --data-raw '{"nric":"S2345678E","passcode":"01011990"}')
+    TOK_B=$(printf '%s' "$raw" | jq -r 'try .tokens.access_token // .access_token // empty')
+    [ -n "${TOK_B:-}" ] || { echo "!! Login failed for Bob; resp: $raw"; exit 1; }
+
+    echo "==> Logging in attendees..."
+    raw=$(curl -sS -X POST "$AUTH/auth/login" -H 'Content-Type: application/json' --data-raw '{"nric":"S1111111A","passcode":"01012000"}')
+    TOK_TOM=$(printf '%s' "$raw" | jq -r 'try .tokens.access_token // .access_token // empty')
+    [ -n "${TOK_TOM:-}" ] || { echo "!! Login failed for Tom; resp: $raw"; exit 1; }
+
+    raw=$(curl -sS -X POST "$AUTH/auth/login" -H 'Content-Type: application/json' --data-raw '{"nric":"S2222222B","passcode":"02022000"}')
+    TOK_JER=$(printf '%s' "$raw" | jq -r 'try .tokens.access_token // .access_token // empty')
+    [ -n "${TOK_JER:-}" ] || { echo "!! Login failed for Jerry; resp: $raw"; exit 1; }
+
+    raw=$(curl -sS -X POST "$AUTH/auth/login" -H 'Content-Type: application/json' --data-raw '{"nric":"S3333333C","passcode":"03032000"}')
+    TOK_MOE=$(printf '%s' "$raw" | jq -r 'try .tokens.access_token // .access_token // empty')
+    [ -n "${TOK_MOE:-}" ] || { echo "!! Login failed for Moe; resp: $raw"; exit 1; }
+
+    raw=$(curl -sS -X POST "$AUTH/auth/login" -H 'Content-Type: application/json' --data-raw '{"nric":"S4444444D","passcode":"04042000"}')
+    TOK_SUE=$(printf '%s' "$raw" | jq -r 'try .tokens.access_token // .access_token // empty')
+    [ -n "${TOK_SUE:-}" ] || { echo "!! Login failed for Sue; resp: $raw"; exit 1; }
+
+    echo "==> Create orgs (no shape assumptions)..."
+    # Create (409 allowed) then resolve robustly
+    curlj POST "$AUTH/orgs" "$TOK_A" '{"name":"Acme Hiking"}' "409" >/dev/null || true
+    org1="$(find_org_id_by_name "$TOK_A" "Acme Hiking" || true)"
+    if [ -z "${org1:-}" ]; then
+      echo "-- DEBUG /orgs (Alice) raw --"
+      curl -sS -H "Authorization: Bearer $TOK_A" "$AUTH/orgs" | sed -e 's/^/     /'
+      echo "-- DEBUG /users/me (Alice) raw --"
+      curl -sS -H "Authorization: Bearer $TOK_A" "$AUTH/users/me" | sed -e 's/^/     /'
+      echo "!! org1 unresolved after GETs"; exit 1
+    fi
+
+    curlj POST "$AUTH/orgs" "$TOK_B" '{"name":"Summit Seekers"}' "409" >/dev/null || true
+    org2="$(find_org_id_by_name "$TOK_B" "Summit Seekers" || true)"
+    if [ -z "${org2:-}" ]; then
+      echo "-- DEBUG /orgs (Bob) raw --"
+      curl -sS -H "Authorization: Bearer $TOK_B" "$AUTH/orgs" | sed -e 's/^/     /'
+      echo "-- DEBUG /users/me (Bob) raw --"
+      curl -sS -H "Authorization: Bearer $TOK_B" "$AUTH/users/me" | sed -e 's/^/     /'
+      echo "!! org2 unresolved after GETs"; exit 1
+    fi
+    echo "    org1=$org1  org2=$org2"
+
+    echo "==> Create trails..."
+    t11=$(curlj POST "$TRAILS/trails/orgs/$org1" "$TOK_A" '{"title":"City Park Walk","capacity":5,"starts_at":"2030-01-01T09:00:00Z","ends_at":"2030-01-01T10:30:00Z","location":"City Park"}' "409" | jq -r 'try .id // .data.id // empty' || true)
+    [ -z "${t11:-}" ] && t11=$(find_trail_id_by_title "$org1" "City Park Walk" || true)
+    t21=$(curlj POST "$TRAILS/trails/orgs/$org2" "$TOK_B" '{"title":"Hilltop Sunrise","capacity":4,"starts_at":"2030-01-03T06:30:00Z","ends_at":"2030-01-03T08:00:00Z","location":"Hilltop"}' "409" | jq -r 'try .id // .data.id // empty' || true)
+    [ -z "${t21:-}" ] && t21=$(find_trail_id_by_title "$org2" "Hilltop Sunrise" || true)
+    echo "    trails: $t11 (org1), $t21 (org2)"
+
+    echo "==> Register attendees..."
+    reg_self() { curlj POST "$TRAILS/registrations/trails/$1/self" "$2" '{}' "409" >/dev/null || true; }
+    reg_self "$t11" "$TOK_TOM"; reg_self "$t11" "$TOK_JER"
+    reg_self "$t21" "$TOK_MOE"; reg_self "$t21" "$TOK_SUE"
+
+    echo "==> Rules & vouchers..."
+    curlj POST "$POINTS/orgs/$org1/rules" "$TOK_A" '{"type":"checkin","points":10,"name":"Check-in +10"}' "409" >/dev/null || true
+    curlj POST "$POINTS/orgs/$org2/rules" "$TOK_B" '{"type":"checkin","points":10,"name":"Check-in +10"}' "409" >/dev/null || true
+    curlj POST "$POINTS/vouchers/orgs/$org1" "$TOK_A" '{"name":"Acme $5","points_cost":50,"total_quantity":100}' "409" >/dev/null || true
+    curlj POST "$POINTS/vouchers/orgs/$org2" "$TOK_B" '{"name":"Summit $5","points_cost":50,"total_quantity":100}' "409" >/dev/null || true
+
+    echo "==> Mint service token..."
+    SVC_JSON=$(curl -sS -X POST "$AUTH/auth/service-token" -H 'Content-Type: application/json' \
+      -d "{\"client_id\":\"$SVC_ID\",\"client_secret\":\"$SVC_SECRET\",\"org_ids\":[\"$org1\",\"$org2\"],\"expires_minutes\":60}")
+    TOK_SVC=$(printf '%s' "$SVC_JSON" | jq -r 'try .access_token // .tokens.access_token // empty')
+    [ -z "$TOK_SVC" ] && { echo "!! Failed to mint service token; resp:"; printf '%s\n' "$SVC_JSON"; exit 1; }
+
+    echo "==> Get user IDs..."
+    USERS_JSON="$(curl -sS "$AUTH/users" -H "Authorization: Bearer $TOK_SVC" || true)"
+    if ! is_json "$USERS_JSON"; then echo "!! /users not JSON: $USERS_JSON"; exit 1; fi
+    UID_TOM=$(printf '%s' "$USERS_JSON" | jq -r 'try (map(select(.nric=="S1111111A")) | .[0].id // empty) catch empty')
+    UID_JER=$(printf '%s' "$USERS_JSON" | jq -r 'try (map(select(.nric=="S2222222B")) | .[0].id // empty) catch empty')
+    [ -n "${UID_TOM:-}" ] || { echo "!! Could not resolve Tom user id"; exit 1; }
+    [ -n "${UID_JER:-}" ] || { echo "!! Could not resolve Jerry user id"; exit 1; }
+
+    echo "==> Add points via service token..."
+    curlj POST "$POINTS/points/orgs/$org1/adjust?user_id=$UID_TOM&delta=25&reason=bonus" "$TOK_SVC"
+    curlj POST "$POINTS/points/orgs/$org1/adjust?user_id=$UID_JER&delta=15&reason=welcome" "$TOK_SVC"
+
+    echo "==> Leaderboard (system)..."
+    curlj GET "$LEADER/leaderboard/system" "$TOK_SVC" | jq .
+
+    echo "==> DONE ✅"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: seed-data
+  namespace: play
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: seed-data
+    spec:
+      serviceAccountName: seed-writer
+      restartPolicy: Never
+      containers:
+        - name: seed
+          image: alpine:3.20
+          env:
+            - name: SERVICE_CLIENT_ID
+              value: "qr-checkin"
+            - name: SERVICE_CLIENT_SECRET
+              value: "superlongrandomsecret"
+          command: ["/bin/sh","-lc"]
+          args:
+            - |
+              set -e
+              apk add --no-cache curl jq ca-certificates >/dev/null
+              /bin/sh /seed/seed.sh
+          volumeMounts:
+            - name: seed-script
+              mountPath: /seed
+              readOnly: true
+      volumes:
+        - name: seed-script
+          configMap:
+            name: seed-script
+            defaultMode: 0444

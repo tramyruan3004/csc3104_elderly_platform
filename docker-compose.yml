@@ -1,0 +1,174 @@
+services:
+  # --- Infra ---
+  nats:
+    image: nats:2
+    container_name: nats
+    ports: ["4222:4222"]
+    command: ["-js"] # enable JetStream in case you upgrade later
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports: ["6379:6379"]
+    restart: unless-stopped
+
+  # --- Databases (one per service to keep schemas clean) ---
+  auth-db:
+    image: postgres:16
+    container_name: auth-db
+    environment:
+      POSTGRES_USER: auth
+      POSTGRES_PASSWORD: authpwd
+      POSTGRES_DB: authentication
+    ports: ["54321:5432"]
+    volumes:
+      - auth_pg:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  trails-db:
+    image: postgres:16
+    container_name: trails-db
+    environment:
+      POSTGRES_USER: trails
+      POSTGRES_PASSWORD: trailspwd
+      POSTGRES_DB: trails
+    ports: ["54322:5432"]
+    volumes:
+      - trails_pg:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  qr-db:
+    image: postgres:16
+    container_name: qr-db
+    environment:
+      POSTGRES_USER: qr
+      POSTGRES_PASSWORD: qrpwd
+      POSTGRES_DB: qr
+    ports: ["54324:5432"]
+    volumes:
+      - qr_pg:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  points-db:
+    image: postgres:16
+    container_name: points-db
+    environment:
+      POSTGRES_USER: points
+      POSTGRES_PASSWORD: pointspwd
+      POSTGRES_DB: points
+    ports: ["54323:5432"]
+    volumes:
+      - points_pg:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  leader-db:
+    image: postgres:16
+    container_name: leader-db
+    environment:
+      POSTGRES_USER: leader
+      POSTGRES_PASSWORD: leaderpwd
+      POSTGRES_DB: leaderboard
+    ports: ["54325:5432"]
+    volumes:
+      - leader_pg:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  # --- Services ---
+  authentication-svc:
+    build:
+      context: ./authentication-svc
+    container_name: authentication-svc
+    environment:
+      # DB
+      DATABASE_URL: postgresql+psycopg_async://auth:authpwd@auth-db:5432/authentication
+      # JWT auto-gen OK for dev:
+      ACCESS_TOKEN_EXP_MINUTES: 60
+      REFRESH_TOKEN_EXP_MINUTES: 10080
+      # Optional: leave paths empty so it auto-generates ephemeral keys
+      JWT_PRIVATE_KEY_PATH: ""
+      JWT_PUBLIC_KEY_PATH: ""
+      AUTO_WRITE_KEYS: "false"
+    ports: ["8001:8001"]
+    depends_on: [auth-db]
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8001
+    restart: unless-stopped
+
+  trails-activities-svc:
+    build:
+      context: ./trails-activities-svc
+    container_name: trails-activities-svc
+    environment:
+      DATABASE_URL: postgresql+psycopg_async://trails:trailspwd@trails-db:5432/trails
+      AUTH_JWKS_URL: http://authentication-svc:8001/auth/jwks
+      TOKEN_ISSUER: authentication-svc
+    ports: ["8002:8002"]
+    depends_on: [trails-db, authentication-svc]
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8002
+    restart: unless-stopped
+
+  points-vouchers-rules-svc:
+    build:
+      context: ./points-vouchers-rules-svc
+    container_name: points-vouchers-rules-svc
+    environment:
+      DATABASE_URL: postgresql+psycopg_async://points:pointspwd@points-db:5432/points
+      AUTH_JWKS_URL: http://authentication-svc:8001/auth/jwks
+      TOKEN_ISSUER: authentication-svc
+      # NATS consumer (awards on checkins.recorded)
+      NATS_URLS: nats://nats:4222
+      NATS_SUBJECT_CHECKIN: checkins.recorded
+      ENABLE_NATS_CONSUMER: "true"
+    ports: ["8003:8003"]
+    depends_on: [points-db, authentication-svc, nats]
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8003
+    restart: unless-stopped
+
+  qr-checkin-svc:
+    build:
+      context: ./qr-checkin-svc
+    container_name: qr-checkin-svc
+    environment:
+      DATABASE_URL: postgresql+psycopg_async://qr:qrpwd@qr-db:5432/qr
+      AUTH_JWKS_URL: http://authentication-svc:8001/auth/jwks
+      TOKEN_ISSUER: authentication-svc
+      TRAILS_BASE_URL: http://trails-activities-svc:8002
+      POINTS_BASE_URL: http://points-vouchers-rules-svc:8003
+      QR_SECRET: change-this-for-prod
+      QR_TTL_SECONDS: 120
+      REDIS_URL: redis://redis:6379/0
+      RL_ENABLED: "true"
+      RL_WINDOW_SECONDS: 60
+      RL_MAX_REQS: 60
+      NATS_URLS: nats://nats:4222
+      NATS_SUBJECT_CHECKIN: checkins.recorded
+      USE_NATS_FOR_POINTS: "true"
+    ports: ["8004:8004"]
+    depends_on: [qr-db, authentication-svc, trails-activities-svc, points-vouchers-rules-svc, redis, nats]
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8004
+    restart: unless-stopped
+
+  leaderboard-attendance-svc:
+    build:
+      context: ./leaderboard-attendance-svc
+    container_name: leaderboard-attendance-svc
+    environment:
+      DATABASE_URL: postgresql+psycopg_async://leader:leaderpwd@leader-db:5432/leaderboard
+      AUTH_JWKS_URL: http://authentication-svc:8001/auth/jwks
+      TOKEN_ISSUER: authentication-svc
+      NATS_URLS: nats://nats:4222
+      NATS_SUBJECT_CHECKIN: checkins.recorded
+      ENABLE_NATS_CONSUMER: "true"
+      SCORING_MODE: checkins
+      RANKS_REBUILD_INTERVAL_SEC: 60
+    ports: ["8005:8005"]
+    depends_on: [leader-db, authentication-svc, nats]
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8005
+    restart: unless-stopped
+
+volumes:
+  auth_pg:
+  trails_pg:
+  qr_pg:
+  points_pg:
+  leader_pg:

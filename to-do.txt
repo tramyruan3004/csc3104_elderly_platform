@@ -1,0 +1,77 @@
+---FOR DOCKER
+# first time (or after changes)
+docker compose up -d --build
+# follow logs
+docker compose logs -f
+# rebuild only one service
+docker compose build qr-checkin-svc && docker compose up -d qr-checkin-svc
+# restart one service
+docker compose restart points-vouchers-rules-svc
+
+---FOR KUBERNETES
+1. Build images locally (exact paths) - from the five-services directory:
+docker build -t authentication-svc:latest .\authentication-svc
+docker build -t trails-activities-svc:latest .\trails-activities-svc
+docker build -t qr-checkin-svc:latest .\qr-checkin-svc
+docker build -t points-vouchers-rules-svc:latest .\points-vouchers-rules-svc
+docker build -t leaderboard-attendance-svc:latest .\leaderboard-attendance-svc
+
+2. Your local K8s
+# Install Kind in POWERSHELL ADMIN MODE (if needed):
+choco install kind
+
+# Create a cluster if you don’t have one:
+kind create cluster --name play
+# Check if it is created 
+kubectl get nodes
+
+# Load/ Reload all images into the cluster
+kind load docker-image authentication-svc:latest --name play
+kind load docker-image trails-activities-svc:latest --name play
+kind load docker-image qr-checkin-svc:latest --name play
+kind load docker-image points-vouchers-rules-svc:latest --name play
+kind load docker-image leaderboard-attendance-svc:latest --name play
+
+# Apply Kubernetes manifests
+kubectl apply -f k8s/all.yaml
+
+# Verify pods and wait for readiness
+kubectl -n play get pods
+kubectl -n play get svc
+
+kubectl -n play rollout status deploy/authentication-svc
+kubectl -n play rollout status deploy/trails-activities-svc
+kubectl -n play rollout status deploy/qr-checkin-svc
+kubectl -n play rollout status deploy/points-vouchers-rules-svc
+kubectl -n play rollout status deploy/leaderboard-attendance-svc
+
+# PORT FORWARD to test locally then can call all curl cmd
+kubectl -n play port-forward svc/authentication-svc 8001:8001
+kubectl -n play port-forward svc/trails-activities-svc 8002:8002
+kubectl -n play port-forward svc/qr-checkin-svc 8004:8004
+kubectl -n play port-forward svc/points-vouchers-rules-svc 8003:8003
+kubectl -n play port-forward svc/leaderboard-attendance-svc 8005:8005
+
+# Double-check only the kind node remains:
+
+--- INGRESS controller 
+# Install helm if needed
+choco install kubernetes-helm -y
+
+# Install an Ingress controller (nginx) in your kind cluster
+helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+helm repo update
+helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx --namespace ingress-nginx --create-namespace
+
+# Create one Ingress that routes all services by path
+kubectl apply -f k8s/ingress.yaml
+
+# Expose the Ingress on one local port
+kubectl -n ingress-nginx port-forward svc/ingress-nginx-controller 8080:80
+
+---- HENCE now:
+curl -s http://localhost:8080/auth/health
+curl -s http://localhost:8080/trails/health
+curl -s http://localhost:8080/points/health
+curl -s http://localhost:8080/qr/health
+curl -s http://localhost:8080/leaderboard/health

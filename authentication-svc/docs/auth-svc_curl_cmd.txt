@@ -1,0 +1,112 @@
+1. install dependencies
+pip install -r requirements.txt
+
+2. db setup
+docker run -d --name pg-auth 
+  -e POSTGRES_PASSWORD=authpwd -e POSTGRES_USER=auth -e POSTGRES_DB=authentication 
+  -p 54321:5432 postgres:16
+
+3. real time acess to db to check:
+docker exec -it pg-auth psql -U auth -d authentication
+
+4. Run the API server
+python -m uvicorn app.main:app --reload --port 8001
+
+5. API/ microservices testing curl
+A. test if the server is running normally
+  # Check the service is alive
+  curl -s http://localhost:8001/health | jq
+  # View RSA public key info
+  curl -s http://localhost:8001/auth/jwks | jq
+
+B. SIGNUP users (public)
+  # Signup an organiser
+  curl -s http://localhost:8001/auth/signup \
+    -H "Content-Type: application/json" \
+    -d '{
+      "name": "Alice Tan",
+      "nric": "S1234567D",
+      "passcode": "25031999",
+      "role": "organiser"
+    }' | jq
+
+    curl -s http://localhost:8001/auth/signup \
+      -H "Content-Type: application/json" \
+      -d '{
+        "name": "Chloe Lim",
+        "nric": "F1122334Z",
+        "passcode": "14062005",
+        "role": "organiser"
+      }' | jq
+
+  # Signup an attend_user(senior)
+  curl -s http://localhost:8001/auth/signup \
+    -H "Content-Type: application/json" \
+    -d '{
+      "name": "Bob Lee",
+      "nric": "T9876543A",
+      "passcode": "01011980",
+      "role": "attend_user"
+    }' | jq
+
+C. LOGIN users (public) + refresh + LOGOUT
+  # Login as organiser
+  curl -s http://localhost:8001/auth/login \
+    -H "Content-Type: application/json" \
+    -d '{
+      "nric": "F1122334Z",
+      "passcode": "14062005"
+    }' | jq
+
+  LOGIN_JSON=$(curl -s http://localhost:8001/auth/login \
+    -H "Content-Type: application/json" \
+    -d '{"nric":"F1122334Z","passcode":"14062005"}')
+
+  ACCESS=$(echo "$LOGIN_JSON" | jq -r '.tokens.access_token')
+  
+  echo $ACCESS
+
+  # Test if the token is working properly
+  curl -s http://localhost:8001/users/me \
+    -H "Authorization: Bearer $ACCESS" | jq
+
+  REFRESH=$(echo "$LOGIN_JSON" | jq -r '.tokens.refresh_token')
+  
+  echo $REFRESH
+
+  # Refresh (get a new access + refresh pair) instead of logging out
+  curl -s http://localhost:8001/auth/refresh \
+    -H "Authorization: Bearer $ACCESS" \
+    -H "Content-Type: application/json" \
+    -d "{\"refresh_token\":\"$REFRESH\"}" | jq
+  
+  # LOGOUT = revoke that refresh token - expected: HTTP/1.1 204 No Content
+  curl -s -X POST http://localhost:8001/auth/logout \
+    -H "Authorization: Bearer $ACCESS" \
+    -H "Content-Type: application/json" \
+    -d "{\"refresh_token\":\"$REFRESH\"}" -i
+
+D. CREATE ORGANISATIONS (organiser only)
+  curl -s http://localhost:8001/orgs \
+    -H "Authorization: Bearer $ACCESS" \
+    -H "Content-Type: application/json" \
+    -d '{"name": "Acme Wellness Org"}' | jq
+
+  # An example
+  ORG_ID="71c0cc2f-6129-4f37-8741-6f5cb7d5d4e5" 
+
+E. ADD ANOTHER ORGANISER to an ORGANISATIONS
+  curl -s http://localhost:8001/orgs/$ORG_ID/members \
+    -H "Authorization: Bearer $ACCESS" \
+    -H "Content-Type: application/json" \
+    -d '{"nric": "F1122334Z"}' | jq
+
+F. Refresh and LOGOUT
+  # Refresh access token
+  curl -s http://localhost:8001/auth/refresh \
+    -H "Content-Type: application/json" \
+    -d '{"refresh_token": "your_refresh_token_here"}' | jq
+
+  # Logout / revoke refresh token
+  curl -s -X POST http://localhost:8001/auth/logout \
+    -H "Authorization: Bearer $ACCESS" | jq

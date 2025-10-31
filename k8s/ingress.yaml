@@ -1,0 +1,49 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: play-ingress
+  namespace: play
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+spec:
+  ingressClassName: nginx
+  rules:
+  - http:
+      paths:
+      - path: /auth(/|$)(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: authentication-svc
+            port:
+              number: 8001
+      - path: /trails(/|$)(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: trails-activities-svc
+            port:
+              number: 8002
+      - path: /points(/|$)(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: points-vouchers-rules-svc
+            port:
+              number: 8003
+      - path: /qr(/|$)(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: qr-checkin-svc
+            port:
+              number: 8004
+      - path: /leaderboard(/|$)(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: leaderboard-attendance-svc
+            port:
+              number: 8005
