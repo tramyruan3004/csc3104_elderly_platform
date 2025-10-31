@@ -3,11 +3,11 @@
 ## Authentication Service (http://localhost:8001)
 - [x] POST /auth/signup
 - [x] POST /auth/login
-- [ ] POST /auth/refresh
+- [x] POST /auth/refresh
 - [x] POST /auth/logout
 - [ ] GET /auth/jwks
 - [ ] POST /auth/service-token
-- [ ] GET /users/me
+- [x] GET /users/me
 - [ ] POST /orgs
 - [ ] POST /orgs/{org_id}/members
 - [ ] DELETE /orgs/{org_id}/members/{user_id}
@@ -28,8 +28,8 @@
 - [ ] POST /registrations/{registration_id}/reject
 - [ ] POST /registrations/{registration_id}/cancel
 - [ ] DELETE /registrations/{registration_id}
-- [ ] GET /users/me/registrations
-- [ ] GET /users/me/confirmed-trails
+- [x] GET /users/me/registrations
+- [x] GET /users/me/confirmed-trails
 - [ ] POST /invites/trails/{trail_id}
 - [ ] GET /invites/{token}
 - [ ] POST /invites/{token}/register
