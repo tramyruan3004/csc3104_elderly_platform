@@ -15,19 +15,19 @@
 - [ ] GET /metrics
 
 ## Trails & Activities Service (http://localhost:8002)
-- [ ] GET /trails
-- [ ] GET /trails/{trail_id}
-- [ ] GET /trails/{trail_id}/attendees
+- [x] GET /trails
+- [x] GET /trails/{trail_id}
+- [x] GET /trails/{trail_id}/attendees
 - [ ] POST /trails/orgs/{org_id}
 - [ ] PATCH /trails/{trail_id}
-- [ ] GET /trails/{trail_id}/registrations/by-user/{user_id}
-- [ ] POST /registrations/trails/{trail_id}/self
+- [x] GET /trails/{trail_id}/registrations/by-user/{user_id}
+- [x] POST /registrations/trails/{trail_id}/self
 - [ ] POST /registrations/trails/{trail_id}/by-organiser
 - [ ] POST /registrations/{registration_id}/approve
 - [ ] POST /registrations/{registration_id}/confirm
 - [ ] POST /registrations/{registration_id}/reject
 - [ ] POST /registrations/{registration_id}/cancel
-- [ ] DELETE /registrations/{registration_id}
+- [x] DELETE /registrations/{registration_id}
 - [x] GET /users/me/registrations
 - [x] GET /users/me/confirmed-trails
 - [ ] POST /invites/trails/{trail_id}

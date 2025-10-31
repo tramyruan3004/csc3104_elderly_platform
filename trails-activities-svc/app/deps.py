@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Dict
+from typing import Any, Dict, AsyncGenerator
 
 import httpx
 import jwt
-from fastapi import Header, HTTPException, status, Depends
+from fastapi import Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .core.config import get_settings
@@ -53,6 +53,6 @@ async def get_claims(authorization: str | None = Header(default=None)) -> Dict[s
         payload["org_ids"] = []
     return payload
 
-async def get_db() -> AsyncSession:
-    async for s in get_session():
-        return s
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    async for session in get_session():
+        yield session
