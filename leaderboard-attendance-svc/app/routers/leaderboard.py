@@ -16,11 +16,18 @@ def current_ym() -> int:
     return now.year * 100 + now.month
 
 def _allow_actor_for_org(claims: dict, org_id: UUID) -> bool:
-    """Allow organiser within org or service with matching org scope."""
+    """Allow organisers, admins, or attendees within the org and scoped services."""
     role = claims.get("role")
     org_ids = [str(x) for x in claims.get("org_ids", [])]
-    in_scope = (not org_ids) or (str(org_id) in org_ids)  # empty means global service
-    return (role == "organiser" and str(org_id) in org_ids) or (role == "service" and in_scope)
+
+    if role == "service":
+        # services may omit org_ids (global) or include explicit scopes
+        return (not org_ids) or (str(org_id) in org_ids)
+
+    if role in {"organiser", "admin", "attend_user"}:
+        return str(org_id) in org_ids
+
+    return False
 
 @router.get("/system", response_model=list[LeaderRow])
 async def system_leaderboard(

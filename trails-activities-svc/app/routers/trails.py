@@ -19,7 +19,7 @@ def _ensure_organiser_for_org(claims, org_id: uuid.UUID):
     if str(org_id) not in [str(x) for x in claims.get("org_ids", [])]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this organization")
 
-@router.get("")
+@router.get("", response_model=list[TrailRead])
 async def list_trails(
     db: AsyncSession = Depends(get_db),
     org_id: uuid.UUID | None = Query(default=None),
@@ -32,27 +32,75 @@ async def list_trails(
     if role not in {"attend_user", "organiser", "service", "admin"}:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Unauthorized role")
 
-    if org_id:
-        if role == "organiser":
+    claim_org_ids = [uuid.UUID(str(oid)) for oid in claims.get("org_ids", []) if oid]
+
+    allowed_org_ids: list[uuid.UUID] | None = None
+    status_set: set[TrailStatus] | None = None
+
+    if role == "attend_user":
+        if not claim_org_ids:
+            # attendee without org membership should see nothing
+            return []
+        if org_id:
+            if org_id not in claim_org_ids:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not part of organisation")
+            allowed_org_ids = [org_id]
+        else:
+            allowed_org_ids = claim_org_ids
+        attendee_allowed_statuses = {TrailStatus.PUBLISHED, TrailStatus.CLOSED}
+        if status_filter:
+            if status_filter not in attendee_allowed_statuses:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Attendee cannot view that status")
+            status_set = {status_filter}
+        else:
+            status_set = attendee_allowed_statuses
+    elif role == "organiser":
+        if org_id:
             _ensure_organiser_for_org(claims, org_id)
-        elif role != "service":
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden for this organization")
+            allowed_org_ids = [org_id]
+        elif claim_org_ids:
+            allowed_org_ids = claim_org_ids
+        if status_filter:
+            status_set = {status_filter}
+    elif role == "service":
+        if org_id:
+            if claim_org_ids and org_id not in claim_org_ids:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Service token not scoped for org")
+            allowed_org_ids = [org_id]
+        elif claim_org_ids:
+            allowed_org_ids = claim_org_ids
+        if status_filter:
+            status_set = {status_filter}
+    else:  # admin
+        if org_id:
+            allowed_org_ids = [org_id]
+        if status_filter:
+            status_set = {status_filter}
 
     stmt = select(Trail)
-    if org_id:
-        stmt = stmt.where(Trail.org_id == org_id)
-    if status_filter:
-        stmt = stmt.where(Trail.status == status_filter)
+    if allowed_org_ids is not None:
+        if not allowed_org_ids:
+            return []
+        stmt = stmt.where(Trail.org_id.in_(allowed_org_ids))
+    if status_set is not None:
+        stmt = stmt.where(Trail.status.in_(status_set))
     if date_from:
         stmt = stmt.where(Trail.starts_at >= date_from)
     if date_to:
         stmt = stmt.where(Trail.starts_at < date_to)
-    rows = (await db.execute(stmt)).scalars().all()
+
+    rows = (await db.execute(stmt.order_by(Trail.starts_at.asc()))).scalars().all()
     return [
         TrailRead(
-            id=t.id, org_id=t.org_id, title=t.title, description=t.description,
-            starts_at=t.starts_at, ends_at=t.ends_at, location=t.location,
-            capacity=t.capacity, status=t.status.value
+            id=t.id,
+            org_id=t.org_id,
+            title=t.title,
+            description=t.description,
+            starts_at=t.starts_at,
+            ends_at=t.ends_at,
+            location=t.location,
+            capacity=t.capacity,
+            status=t.status.value,
         )
         for t in rows
     ]

@@ -25,9 +25,8 @@ async def lookup_by_nric(
     actor: User = Depends(require_organiser),
     db: AsyncSession = Depends(get_db),
 ):
-    target = (
-        await db.execute(select(User).where(User.nric == nric))
-    ).scalar_one_or_none()
+    lookup_result = await db.execute(select(User).where(User.nric == nric))
+    target = lookup_result.scalar_one_or_none()
     if not target:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     if target.role != UserRole.ATTEND_USER:
@@ -35,8 +34,8 @@ async def lookup_by_nric(
     if not target.is_active:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User is inactive")
 
-    rows = await db.execute(select(OrgMember.org_id).where(OrgMember.user_id == target.id))
-    org_ids = [r[0] for r in rows.all()]
+    org_rows = await db.execute(select(OrgMember.org_id).where(OrgMember.user_id == target.id))
+    org_ids = [r[0] for r in org_rows.all()]
     return UserRead(
         id=target.id,
         name=target.name,
@@ -44,3 +43,32 @@ async def lookup_by_nric(
         role=target.role.value,
         org_ids=org_ids,
     )
+
+
+@router.get("/participants", response_model=list[UserRead])
+async def list_participants(actor: User = Depends(require_organiser), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(User).where(User.role == UserRole.ATTEND_USER).order_by(User.name)
+    )
+    users = result.scalars().all()
+    if not users:
+        return []
+
+    user_ids = [user.id for user in users]
+    membership_rows = await db.execute(
+        select(OrgMember.user_id, OrgMember.org_id).where(OrgMember.user_id.in_(user_ids))
+    )
+    membership_map: dict = {}
+    for user_id, org_id in membership_rows.all():
+        membership_map.setdefault(user_id, []).append(org_id)
+
+    return [
+        UserRead(
+            id=user.id,
+            name=user.name,
+            nric=user.nric,
+            role=user.role.value,
+            org_ids=membership_map.get(user.id, []),
+        )
+        for user in users
+    ]

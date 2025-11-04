@@ -12,6 +12,14 @@ from ..schemas import OrganizationCreate, OrganizationRead, AddMemberRequest
 router = APIRouter(prefix="/orgs", tags=["organizations"])
 
 
+# Provide a simple list endpoint so organisers can see available organisations.
+@router.get("", response_model=list[OrganizationRead])
+async def list_orgs(actor: User = Depends(require_organiser), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Organization).order_by(Organization.name))
+    organizations = result.scalars().all()
+    return [OrganizationRead(id=org.id, name=org.name) for org in organizations]
+
+
 @router.post("", response_model=OrganizationRead)
 async def create_org(payload: OrganizationCreate, actor: User = Depends(require_organiser), db: AsyncSession = Depends(get_db)):
     # ensure unique name
@@ -44,8 +52,8 @@ async def add_member(org_id: uuid.UUID, body: AddMemberRequest, actor: User = De
     if not target:
         raise HTTPException(status_code=404, detail="Target user not found")
 
-    if target.role != UserRole.ORGANISER:
-        raise HTTPException(status_code=400, detail="Only organisers can be org members")
+    if target.role not in (UserRole.ORGANISER, UserRole.ATTEND_USER):
+        raise HTTPException(status_code=400, detail="User role is not eligible for organisation membership")
 
     # upsert-ish: respect uniqueness
     existing = (await db.execute(
@@ -54,7 +62,7 @@ async def add_member(org_id: uuid.UUID, body: AddMemberRequest, actor: User = De
     if existing:
         return  # 204
 
-    db.add(OrgMember(org_id=org_id, user_id=target.id, role_in_org=UserRole.ORGANISER))
+    db.add(OrgMember(org_id=org_id, user_id=target.id, role_in_org=target.role))
     await db.commit()
 
 

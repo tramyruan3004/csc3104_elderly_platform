@@ -18,3 +18,7 @@
 
 - Documented authentication Alembic workflow in docs/alembic.md to help new contributors run migrations.
 - Attendance roster endpoint now requires explicit org scope and filters results by organisation (`leaderboard-attendance-svc/app/routers/attendance.py`).
+- Trails listing now scopes attendee queries to their organisations and restricts visible statuses, while still supporting organiser and service filtering (`trails-activities-svc/app/routers/trails.py`).
+- Added organiser-facing participant management: backend now exposes organisation listing, participant enumeration, and flexible membership assignment (`authentication-svc/app/routers/orgs.py`, `authentication-svc/app/routers/users.py`); organiser dashboard Participants tab consumes these endpoints (`cloud-project/apps/organizer-dashboard/src/app/participants/page.tsx`, `src/services/auth.ts`).
+- Authored a consolidated setup guide at `csc3104_elderly_platform/Instructions.md` covering Docker services, Alembic migrations, and frontend startup steps.
+- Senior PWA leaderboard now renders both system-wide and community rankings; adds organisation selector for multi-affiliated seniors and shares refreshed UI blocks across tabs (`cloud-project/apps/senior-pwa/src/pages/Leaderboard.jsx`).

@@ -11,10 +11,13 @@ Legend: ✅ Implemented in client • ⚠️ Planned / pending implementation �
 | POST /auth/logout | ✅ | ✅ | Revokes tokens on logout | Dashboard clears local state only |
 | GET /users/me | ✅ | ✅ | Hydrate organiser profile | Dashboard to hydrate organiser profile |
 | GET /users/lookup | ⬜ | ✅ | Organiser NRIC lookup for participant UUIDs |
+| GET /users/participants | ⬜ | ✅ | Participants tab lists all seniors with memberships |
 | POST /auth/organisers/login | ⬜ | ✅ | Username/password login |
 | POST /auth/organisers/signup | ⬜ | ✅ | Service-only seeding endpoint |
 | POST /auth/service-token | ⬜ | ⚠️ | For future service integrations |
 | GET /auth/jwks | ⬜ | ⬜ | Consumed by other services only |
+| GET /orgs | ⬜ | ✅ | Organiser dashboard lists available organisations |
+| POST /orgs/{org_id}/members | ⬜ | ✅ | Assign seniors or organisers to an organisation |
 
 ## Trails & Activities Service (http://localhost:8002)
 | Endpoint | Senior PWA | Organiser Dashboard | Notes |
@@ -26,7 +29,7 @@ Legend: ✅ Implemented in client • ⚠️ Planned / pending implementation �
 | DELETE /registrations/{registration_id} | ✅ | ⬜ | Seniors cancel |
 | GET /users/me/registrations | ✅ | ✅ | Useful for organiser support |
 | GET /users/me/confirmed-trails | ✅ | ✅ | |
-| POST /registrations/trails/{trail_id}/by-organiser | ⚠️ | ✅ | Manual enrolment form wired |
+| POST /registrations/trails/{trail_id}/by-organiser | ⚠️ | ✅ | Manual enrolment form wires NRIC → UUID |
 | POST /registrations/{registration_id}/approve | ⬜ | ✅ | Organiser-only approval workflow |
 | POST /registrations/{registration_id}/confirm | ⬜ | ✅ | |
 | POST /registrations/{registration_id}/reject | ⬜ | ✅ | |
@@ -63,8 +66,8 @@ Legend: ✅ Implemented in client • ⚠️ Planned / pending implementation �
 ## Leaderboard & Attendance Service (http://localhost:8005)
 | Endpoint | Senior PWA | Organiser Dashboard | Notes |
 | --- | --- | --- | --- |
-| GET /leaderboard/system | ⚠️ | ✅ | PWA consumes system view |
-| GET /leaderboard/orgs/{org_id} | ⬜ | ✅ | Organiser-specific ranks |
+| GET /leaderboard/system | ✅ | ✅ | PWA global leaderboard + organiser view |
+| GET /leaderboard/orgs/{org_id} | ✅ | ✅ | PWA "My CC" tab + organiser-specific ranks |
 | GET /attendance/users/me | ⚠️ | ⚠️ | PWA attendance history |
 | GET /attendance/trails/{trail_id} | ⬜ | ✅ | Organiser roster |
 
