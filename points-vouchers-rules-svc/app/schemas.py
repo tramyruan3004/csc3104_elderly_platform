@@ -91,6 +91,8 @@ class RedemptionRead(BaseModel):
     org_id: UUID
     status: Literal["redeemed", "voided", "cancelled"] | str  # adjust to your enums
     redeemed_at: datetime
+    voucher_name: str | None = None
+    voucher_code: str | None = None
 
 # --- ingest (from qr-checkin-svc)
 class CheckinIngest(BaseModel):

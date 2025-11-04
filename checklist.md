@@ -50,15 +50,15 @@ Legend: ✅ Implemented in client • ⚠️ Planned / pending implementation �
 ## Points & Vouchers Service (http://localhost:8003)
 | Endpoint | Senior PWA | Organiser Dashboard | Notes |
 | --- | --- | --- | --- |
-| GET /points/users/me/balance | ⚠️ | ✅ | Dashboard points overview page |
-| GET /points/users/me/ledger | ⚠️ | ✅ | |
+| GET /points/users/me/balance | ✅ | ✅ | Dashboard points overview page |
+| GET /points/users/me/ledger | ✅ | ✅ | |
 | POST /points/ingest/checkin | ⬜ | ⚠️ | Service-to-service |
 | POST /points/orgs/{org_id}/adjust | ⬜ | ✅ | Dashboard resolves NRIC → UUID, JSON payload |
-| GET /vouchers | ⚠️ | ✅ | PWA fetch implemented |
+| GET /vouchers | ✅ | ✅ | PWA fetch implemented |
 | POST /vouchers/orgs/{org_id} | ⬜ | ✅ | Organiser voucher creation |
 | PATCH /vouchers/{voucher_id} | ⬜ | ✅ | |
-| POST /vouchers/{voucher_id}/redeem | ⚠️ | ⬜ | PWA redeem only |
-| GET /vouchers/users/me/redemptions | ⚠️ | ⚠️ | |
+| POST /vouchers/{voucher_id}/redeem | ✅ | ⬜ | PWA redeem only |
+| GET /vouchers/users/me/redemptions | ✅ | ⚠️ | |
 | GET /orgs/{org_id}/rules | ⬜ | ⚠️ | Organiser rule management |
 | POST /orgs/{org_id}/rules | ⬜ | ⚠️ | |
 | PATCH /orgs/{org_id}/rules/{rule_id} | ⬜ | ⚠️ | |

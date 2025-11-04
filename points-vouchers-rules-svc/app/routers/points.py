@@ -1,6 +1,6 @@
 from __future__ import annotations
 import uuid
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -17,8 +17,26 @@ def _allow_actor_for_org(claims, org_id: uuid.UUID) -> bool:
     in_scope = (not org_ids) or (str(org_id) in org_ids)  # empty -> global
     return (role == "organiser" and str(org_id) in org_ids) or (role == "service" and in_scope)
 
+
+def _ensure_reader_scope(claims: dict, org_id: uuid.UUID) -> None:
+    role = claims.get("role")
+    org_str = str(org_id)
+    if role == "attend_user":
+        scoped_orgs = {str(x) for x in claims.get("org_ids", []) if x}
+        if scoped_orgs and org_str not in scoped_orgs:
+            raise HTTPException(status_code=403, detail="You are not a member of this organisation")
+        return
+    if role in {"organiser", "service"}:
+        if not _allow_actor_for_org(claims, org_id):
+            raise HTTPException(status_code=403, detail="Out of organisation scope")
+        return
+    if role == "admin":
+        return
+    raise HTTPException(status_code=403, detail="Unsupported role for this resource")
+
 @router.get("/users/me/balance", response_model=BalanceRead)
 async def my_balance(org_id: uuid.UUID, claims: dict = Depends(get_claims), db: AsyncSession = Depends(get_db)):
+    _ensure_reader_scope(claims, org_id)
     user_id = uuid.UUID(claims["sub"])
     up = (await db.execute(select(UserPoints).where(UserPoints.user_id == user_id, UserPoints.org_id == org_id))).scalar_one_or_none()
     if not up:
@@ -26,10 +44,21 @@ async def my_balance(org_id: uuid.UUID, claims: dict = Depends(get_claims), db: 
     return BalanceRead(user_id=up.user_id, org_id=up.org_id, balance=up.balance, updated_at=up.updated_at)
 
 @router.get("/users/me/ledger", response_model=list[LedgerRead])
-async def my_ledger(org_id: uuid.UUID, claims: dict = Depends(get_claims), db: AsyncSession = Depends(get_db)):
+async def my_ledger(
+    org_id: uuid.UUID,
+    claims: dict = Depends(get_claims),
+    db: AsyncSession = Depends(get_db),
+    limit: int = Query(100, ge=1, le=500),
+):
+    _ensure_reader_scope(claims, org_id)
     user_id = uuid.UUID(claims["sub"])
-    rows = (await db.execute(select(PointsLedger).where(PointsLedger.user_id == user_id, PointsLedger.org_id == org_id)
-                             .order_by(PointsLedger.occurred_at.desc()))).scalars().all()
+    stmt = (
+        select(PointsLedger)
+        .where(PointsLedger.user_id == user_id, PointsLedger.org_id == org_id)
+        .order_by(PointsLedger.occurred_at.desc())
+        .limit(limit)
+    )
+    rows = (await db.execute(stmt)).scalars().all()
     return [LedgerRead(id=r.id, delta=r.delta, reason=r.reason, trail_id=r.trail_id, details=r.details, occurred_at=r.occurred_at) for r in rows]
 
 # Ingest from qr-checkin-svc (server-to-server; use organiser or service token)
