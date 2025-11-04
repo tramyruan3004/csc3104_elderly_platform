@@ -15,11 +15,23 @@ settings = get_settings()
 # Use bcrypt_sha256 to avoid bcrypt 72-byte issues
 _pwd_context = CryptContext(schemes=["bcrypt_sha256"], deprecated="auto")
 
+def hash_secret(secret: str) -> str:
+    return _pwd_context.hash(secret)
+
+def verify_secret(secret: str, hashed: str) -> bool:
+    return _pwd_context.verify(secret, hashed)
+
 def hash_passcode(passcode: str) -> str:
-    return _pwd_context.hash(passcode)
+    return hash_secret(passcode)
 
 def verify_passcode(passcode: str, hashed: str) -> bool:
-    return _pwd_context.verify(passcode, hashed)
+    return verify_secret(passcode, hashed)
+
+def hash_password(password: str) -> str:
+    return hash_secret(password)
+
+def verify_password(password: str, hashed: str) -> bool:
+    return verify_secret(password, hashed)
 
 def make_refresh_token() -> Tuple[str, str]:
     raw = secrets.token_urlsafe(48)

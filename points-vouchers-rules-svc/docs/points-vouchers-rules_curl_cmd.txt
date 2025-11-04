@@ -94,8 +94,19 @@ C. Attendee views their balance
     -H "Authorization: Bearer $ACCESS_ATT" | jq
 
 D. Add +50 points to a user (manual bonus)
-  curl -s -X POST "http://localhost:8003/points/orgs/$ORG_ID/adjust?user_id=$USER_ID_ATT&delta=50&reason=manual_bonus" \
-    -H "Authorization: Bearer $ACCESS_ORG" | jq
+  # Optional: resolve a participant's UUID from their NRIC first
+  USER_LOOKUP=$(curl -s "http://localhost:8001/users/lookup?nric=S1234567A" \
+    -H "Authorization: Bearer $ACCESS_ORG")
+  USER_ID_ATT=$(echo "$USER_LOOKUP" | jq -r '.id')
+
+  curl -s -X POST "http://localhost:8003/points/orgs/$ORG_ID/adjust" \
+    -H "Authorization: Bearer $ACCESS_ORG" \
+    -H "Content-Type: application/json" \
+    -d "{
+      \"user_id\":\"$USER_ID_ATT\",
+      \"delta\":50,
+      \"reason\":\"manual_bonus\"
+    }" | jq
 
 E. Vouchers — organiser creates; attendee redeems
   # Organiser creates a voucher

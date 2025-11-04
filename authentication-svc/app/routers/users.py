@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from ..deps import get_db, get_current_user
-from ..models import OrgMember, User
+from ..deps import get_db, get_current_user, require_organiser
+from ..models import OrgMember, User, UserRole
 from ..schemas import UserRead
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -16,3 +16,31 @@ async def me(user: User = Depends(get_current_user), db: AsyncSession = Depends(
     rows = await db.execute(select(OrgMember.org_id).where(OrgMember.user_id == user.id))
     org_ids = [r[0] for r in rows.all()]
     return UserRead(id=user.id, name=user.name, nric=user.nric, role=user.role.value, org_ids=org_ids)
+
+
+@router.get("/lookup", response_model=UserRead)
+async def lookup_by_nric(
+    nric: str = Query(..., min_length=3, max_length=32,
+                      description="NRIC identifier of the participant"),
+    actor: User = Depends(require_organiser),
+    db: AsyncSession = Depends(get_db),
+):
+    target = (
+        await db.execute(select(User).where(User.nric == nric))
+    ).scalar_one_or_none()
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if target.role != UserRole.ATTEND_USER:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="NRIC does not belong to a participant")
+    if not target.is_active:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User is inactive")
+
+    rows = await db.execute(select(OrgMember.org_id).where(OrgMember.user_id == target.id))
+    org_ids = [r[0] for r in rows.all()]
+    return UserRead(
+        id=target.id,
+        name=target.name,
+        nric=target.nric,
+        role=target.role.value,
+        org_ids=org_ids,
+    )

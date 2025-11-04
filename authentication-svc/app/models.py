@@ -50,11 +50,16 @@ class User(Base):
 
 class Credential(Base):
     __tablename__ = "credentials"
+    __table_args__ = (
+        UniqueConstraint("admin_username", name="uq_credentials_admin_username"),
+    )
 
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
     passcode_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    admin_username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    admin_password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

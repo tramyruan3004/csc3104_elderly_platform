@@ -16,6 +16,7 @@ class TrailCreate(BaseModel):
     ends_at: datetime
     location: OptStr255 = None
     capacity: PosInt
+    status: Literal["draft", "published", "closed", "cancelled"] | None = "published"
 
     @model_validator(mode="after")
     def _check_dates(self):

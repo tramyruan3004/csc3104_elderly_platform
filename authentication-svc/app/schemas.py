@@ -7,6 +7,8 @@ from pydantic import BaseModel, Field, constr
 Str255   = Annotated[str, Field(strip_whitespace=True, min_length=1, max_length=255)]
 NRICType = Annotated[str, Field(strip_whitespace=True, min_length=3, max_length=32)]
 Passcode8 = Annotated[str, Field(pattern=r"^\d{8}$")]  # ddmmyyyy
+UsernameType = Annotated[str, Field(strip_whitespace=True, min_length=3, max_length=64)]
+PasswordType = Annotated[str, Field(min_length=8, max_length=128)]
 
 # -------- Auth --------
 class SignUpRequest(BaseModel):
@@ -21,6 +23,20 @@ class LoginRequest(BaseModel):
     passcode: Passcode8
 
 
+class OrganiserSignupRequest(BaseModel):
+    client_id: Str255
+    client_secret: Str255
+    name: Str255
+    nric: NRICType
+    username: UsernameType
+    password: PasswordType
+
+
+class OrganiserLoginRequest(BaseModel):
+    username: UsernameType
+    password: PasswordType
+
+
 class TokenPair(BaseModel):
     access_token: str
     refresh_token: str
@@ -33,7 +49,7 @@ class UserRead(BaseModel):
     id: UUID
     name: str
     nric: str
-    role: Literal["attend_user", "organiser"]
+    role: Literal["attend_user", "organiser", "admin"]
     org_ids: list[UUID] = Field(default_factory=list)
 
 

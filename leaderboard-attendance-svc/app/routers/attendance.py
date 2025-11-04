@@ -1,6 +1,6 @@
 from __future__ import annotations
 import uuid
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from ..deps import get_claims, get_db
@@ -18,12 +18,19 @@ def _allow_actor_for_org(claims: dict, org_id: uuid.UUID) -> bool:
 
 # Organiser view: list all check-ins for a trail (or whole org by period via query later)
 @router.get("/trails/{trail_id}", response_model=list[AttendanceRow])
-async def trail_roster(trail_id: uuid.UUID, claims: dict = Depends(get_claims), db: AsyncSession = Depends(get_db)):
+async def trail_roster(
+    trail_id: uuid.UUID,
+    org_id: uuid.UUID = Query(..., description="Organisation scope for the trail"),
+    claims: dict = Depends(get_claims),
+    db: AsyncSession = Depends(get_db),
+):
     if not _allow_actor_for_org(claims, org_id):
         raise HTTPException(status_code=403, detail="Organiser or Service not in org")
 
     rows = (await db.execute(
-        select(Attendance).where(Attendance.trail_id == trail_id).order_by(Attendance.checked_at.asc())
+        select(Attendance)
+        .where(Attendance.trail_id == trail_id, Attendance.org_id == org_id)
+        .order_by(Attendance.checked_at.asc())
     )).scalars().all()
     return [AttendanceRow(id=r.id, trail_id=r.trail_id, org_id=r.org_id, user_id=r.user_id, checked_at=r.checked_at) for r in rows]
 

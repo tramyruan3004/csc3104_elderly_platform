@@ -9,8 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import User, Credential, RefreshToken, UserRole, OrgMember
 from ..core.security import (
-    hash_passcode, verify_passcode,
-    create_token_pair
+    hash_passcode,
+    verify_passcode,
+    hash_password,
+    verify_password,
+    create_token_pair,
 )
 import uuid
 from ..core.config import get_settings
@@ -23,11 +26,33 @@ async def _get_org_ids_for_user(db: AsyncSession, user_id: UUID) -> List[UUID]:
     return [r[0] for r in rows.all()]
 
 
-async def signup(db: AsyncSession, *, name: str, nric: str, passcode: str, role: UserRole) -> Tuple[User, str, str, int]:
+async def signup(
+    db: AsyncSession,
+    *,
+    name: str,
+    nric: str,
+    passcode: str,
+    role: UserRole,
+    admin_username: str | None = None,
+    admin_password: str | None = None,
+) -> Tuple[User, str, str, int]:
     # ensure unique NRIC
     exists = (await db.execute(select(User.id).where(User.nric == nric))).scalar_one_or_none()
     if exists:
         raise ValueError("NRIC already registered")
+
+    if admin_username:
+        existing_admin = (
+            await db.execute(select(Credential).where(Credential.admin_username == admin_username))
+        ).scalar_one_or_none()
+        if existing_admin:
+            raise ValueError("Admin username already in use")
+
+    if admin_username or admin_password:
+        if role not in (UserRole.ORGANISER, UserRole.ADMIN):
+            raise ValueError("Admin credentials can only be attached to organiser or admin roles")
+        if not admin_username or not admin_password:
+            raise ValueError("Both admin username and password are required")
 
     user = User(
         id=uuid.uuid4(),
@@ -40,6 +65,9 @@ async def signup(db: AsyncSession, *, name: str, nric: str, passcode: str, role:
     await db.flush()  # get user.id
 
     cred = Credential(user_id=user.id, passcode_hash=hash_passcode(passcode))
+    if admin_username and admin_password:
+        cred.admin_username = admin_username
+        cred.admin_password_hash = hash_password(admin_password)
     db.add(cred)
     await db.commit()
 
@@ -68,6 +96,39 @@ async def login(db: AsyncSession, *, nric: str, passcode: str) -> Tuple[User, st
 
     cred = (await db.execute(select(Credential).where(Credential.user_id == user.id))).scalar_one_or_none()
     if not cred or not verify_passcode(passcode, cred.passcode_hash):
+        raise PermissionError("Invalid credentials")
+
+    org_ids = await _get_org_ids_for_user(db, user.id)
+    access, refresh_raw, expires_in, refresh_hash = create_token_pair(
+        user_id=user.id, role=user.role.value, org_ids=org_ids
+    )
+    rt = RefreshToken(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        token_hash=refresh_hash,
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=settings.refresh_token_exp_minutes),
+        revoked=False,
+    )
+    db.add(rt)
+    await db.commit()
+    return user, access, refresh_raw, expires_in
+
+
+async def admin_login(db: AsyncSession, *, username: str, password: str) -> Tuple[User, str, str, int]:
+    cred = (
+        await db.execute(select(Credential).where(Credential.admin_username == username))
+    ).scalar_one_or_none()
+    if not cred or not cred.admin_password_hash:
+        raise PermissionError("Invalid credentials")
+
+    if not verify_password(password, cred.admin_password_hash):
+        raise PermissionError("Invalid credentials")
+
+    user = (
+        await db.execute(select(User).where(User.id == cred.user_id))
+    ).scalar_one_or_none()
+
+    if not user or not user.is_active or user.role not in (UserRole.ORGANISER, UserRole.ADMIN):
         raise PermissionError("Invalid credentials")
 
     org_ids = await _get_org_ids_for_user(db, user.id)

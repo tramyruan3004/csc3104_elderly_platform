@@ -77,3 +77,4 @@ curl -s http://localhost:8080/qr/health
 curl -s http://localhost:8080/leaderboard/health
 
 - [ ] Implement invite flow endpoints in senior PWA (GET/POST /invites/...)
+- Update the trails service role gate and attendee default filter, then rerun organiser + senior flows to confirm unrestricted listing.

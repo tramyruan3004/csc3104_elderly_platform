@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 from ..deps import get_db, get_claims
 from ..models import Trail, TrailStatus, Registration, RegStatus
@@ -26,7 +26,18 @@ async def list_trails(
     status_filter: TrailStatus | None = Query(default=None),
     date_from: datetime | None = Query(default=None),
     date_to: datetime | None = Query(default=None),
+    claims: dict = Depends(get_claims),
 ):
+    role = claims.get("role")
+    if role not in {"attend_user", "organiser", "service", "admin"}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Unauthorized role")
+
+    if org_id:
+        if role == "organiser":
+            _ensure_organiser_for_org(claims, org_id)
+        elif role != "service":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden for this organization")
+
     stmt = select(Trail)
     if org_id:
         stmt = stmt.where(Trail.org_id == org_id)
@@ -60,7 +71,9 @@ async def get_trail(trail_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
 @router.get("/{trail_id}/attendees")
 async def list_attendees(
     trail_id: uuid.UUID,
-    status_filter: RegStatus | None = Query(default=RegStatus.CONFIRMED),
+    status_filter: RegStatus | None = Query(default=None),
+    limit: int | None = Query(default=None, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     claims: dict = Depends(get_claims),
     db: AsyncSession = Depends(get_db),
 ):
@@ -70,14 +83,29 @@ async def list_attendees(
     # organiser only for that org
     _ensure_organiser_for_org(claims, t.org_id)
 
-    q = select(Registration).where(Registration.trail_id == trail_id)
+    base_q = select(Registration).where(Registration.trail_id == trail_id)
     if status_filter:
-        q = q.where(Registration.status == status_filter)
-    regs = (await db.execute(q)).scalars().all()
-    return [
+        base_q = base_q.where(Registration.status == status_filter)
+
+    total_stmt = select(func.count()).select_from(base_q.subquery())
+    total = (await db.execute(total_stmt)).scalar_one()
+
+    query = base_q.order_by(Registration.created_at)
+    if limit is not None:
+        query = query.limit(limit).offset(offset)
+    regs = (await db.execute(query)).scalars().all()
+
+    items = [
         {"registration_id": r.id, "user_id": r.user_id, "status": r.status.value, "note": r.note}
         for r in regs
     ]
+    return {
+        "items": items,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "has_more": (offset + len(items)) < total,
+    }
 
 @router.post("/orgs/{org_id}", response_model=TrailRead, status_code=201)
 async def create_trail(
@@ -95,7 +123,7 @@ async def create_trail(
         ends_at=payload.ends_at,
         location=payload.location,
         capacity=payload.capacity,
-        status=TrailStatus.PUBLISHED,
+        status=TrailStatus(payload.status) if payload.status else TrailStatus.PUBLISHED,
         created_by=uuid.UUID(claims["sub"]),
     )
     db.add(t)

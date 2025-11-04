@@ -1,12 +1,12 @@
 from __future__ import annotations
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from ..deps import get_db, get_claims
 from ..models import UserPoints, PointsLedger
-from ..schemas import BalanceRead, LedgerRead, CheckinIngest
+from ..schemas import BalanceRead, LedgerRead, CheckinIngest, AdjustPointsRequest
 from ..services.points import award_checkin_points, adjust_points
 
 router = APIRouter(prefix="/points", tags=["points"])
@@ -62,11 +62,28 @@ async def ingest_checkin(payload: CheckinIngest, claims: dict = Depends(get_clai
 
 # Manual adjust (organiser only)
 @router.post("/orgs/{org_id}/adjust")
-async def adjust_points_admin(org_id: uuid.UUID, user_id: uuid.UUID, delta: int, reason: str = "manual_bonus", claims: dict = Depends(get_claims), db: AsyncSession = Depends(get_db)):
+async def adjust_points_admin(
+    org_id: uuid.UUID,
+    payload: AdjustPointsRequest,
+    claims: dict = Depends(get_claims),
+    db: AsyncSession = Depends(get_db),
+):
     if not _allow_actor_for_org(claims, org_id):
         raise HTTPException(status_code=403, detail="Organiser/Service role with org scope required")
+    reason = payload.reason.strip() if payload.reason else "manual_bonus"
+    if not reason:
+        reason = "manual_bonus"
     try:
-        new_balance = await adjust_points(db, user_id=user_id, org_id=org_id, delta=delta, reason=reason)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Insufficient points")
-    return {"user_id": str(user_id), "org_id": str(org_id), "balance": new_balance}
+        new_balance = await adjust_points(
+            db,
+            user_id=payload.user_id,
+            org_id=org_id,
+            delta=payload.delta,
+            reason=reason,
+        )
+    except ValueError as exc:
+        detail = str(exc) or "Invalid adjustment"
+        if detail.lower().startswith("insufficient"):
+            detail = "Insufficient points"
+        raise HTTPException(status_code=400, detail=detail)
+    return {"user_id": str(payload.user_id), "org_id": str(org_id), "balance": new_balance}

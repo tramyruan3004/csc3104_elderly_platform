@@ -1,5 +1,5 @@
 from __future__ import annotations
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Annotated, Literal
 from uuid import UUID
 from datetime import datetime
@@ -15,7 +15,7 @@ class BalanceRead(BaseModel):
     user_id: UUID
     org_id: UUID
     balance: int
-    updated_at: datetime
+    updated_at: datetime | None = None
 
 class LedgerRead(BaseModel):
     id: UUID
@@ -24,6 +24,19 @@ class LedgerRead(BaseModel):
     trail_id: UUID | None = None
     details: str | None = None
     occurred_at: datetime
+
+
+class AdjustPointsRequest(BaseModel):
+    user_id: UUID
+    delta: int
+    reason: str | None = Field(default=None, max_length=64)
+
+    @field_validator("delta")
+    @classmethod
+    def validate_delta(cls, value: int) -> int:
+        if value == 0:
+            raise ValueError("delta must not be zero")
+        return value
 
 # --- rules
 class RuleCreate(BaseModel):

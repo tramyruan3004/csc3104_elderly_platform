@@ -21,7 +21,7 @@ services:
       POSTGRES_USER: auth
       POSTGRES_PASSWORD: authpwd
       POSTGRES_DB: authentication
-    ports: ["54321:5432"]
+    ports: ["55321:5432"]
     volumes:
       - auth_pg:/var/lib/postgresql/data
     restart: unless-stopped
@@ -33,7 +33,7 @@ services:
       POSTGRES_USER: trails
       POSTGRES_PASSWORD: trailspwd
       POSTGRES_DB: trails
-    ports: ["54322:5432"]
+    ports: ["55322:5432"]
     volumes:
       - trails_pg:/var/lib/postgresql/data
     restart: unless-stopped
@@ -45,7 +45,7 @@ services:
       POSTGRES_USER: qr
       POSTGRES_PASSWORD: qrpwd
       POSTGRES_DB: qr
-    ports: ["54324:5432"]
+    ports: ["55324:5432"]
     volumes:
       - qr_pg:/var/lib/postgresql/data
     restart: unless-stopped
@@ -57,7 +57,7 @@ services:
       POSTGRES_USER: points
       POSTGRES_PASSWORD: pointspwd
       POSTGRES_DB: points
-    ports: ["54323:5432"]
+    ports: ["55323:5432"]
     volumes:
       - points_pg:/var/lib/postgresql/data
     restart: unless-stopped
@@ -69,7 +69,7 @@ services:
       POSTGRES_USER: leader
       POSTGRES_PASSWORD: leaderpwd
       POSTGRES_DB: leaderboard
-    ports: ["54325:5432"]
+    ports: ["55325:5432"]
     volumes:
       - leader_pg:/var/lib/postgresql/data
     restart: unless-stopped

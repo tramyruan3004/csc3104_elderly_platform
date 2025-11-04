@@ -7,3 +7,14 @@
 
 - Created 	esting branch in parent repo and all submodules; updated .gitmodules to track the new branches. 
 
+- Added organiser username/password support in authentication service (new optional credential fields, /auth/organisers/signup and /auth/organisers/login endpoints). Requires database migration to add admin credential columns.
+- Trails & Activities service now enforces authenticated access for listings, honours requested initial status, and emits paginated attendee payloads (updated `trails-activities-svc/app/routers/trails.py`, `app/schemas.py`, plus new tests in `tests/test_trails_service.py`).
+- Aligned Trails service role checks with actual auth roles (`attend_user`, `organiser`, `service`, `admin`) and removed the implicit `confirmed` filter from attendee listings so organisers can action pending registrations (`trails-activities-svc/app/routers/trails.py`).
+- Organiser dashboard now integrates the QR Check-in service: create trail QR tokens, download server-rendered QR PNGs, and view live check-in rosters from Manage Trails (new client helpers in `apps/organizer-dashboard/src/services/checkins.ts` and UI updates in `apps/organizer-dashboard/src/app/manageTrails/page.tsx`).
+- Updated checklist.md to reflect organiser dashboard coverage for trail detail endpoints and removed duplicate row.
+
+- Authentication service now exposes `GET /users/lookup` for organiser NRIC searches, with role checks and attendee validation (`authentication-svc/app/routers/users.py`).
+- Points service manual-adjust endpoint now accepts JSON payloads and returns clearer errors; organiser dashboard resolves NRICs to user IDs via the new lookup API (`points-vouchers-rules-svc/app/routers/points.py`, `app/schemas.py`, dashboard `src/services/points.ts`).
+
+- Documented authentication Alembic workflow in docs/alembic.md to help new contributors run migrations.
+- Attendance roster endpoint now requires explicit org scope and filters results by organisation (`leaderboard-attendance-svc/app/routers/attendance.py`).

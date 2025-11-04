@@ -45,7 +45,16 @@ async def create_qr_png(trail_id: uuid.UUID, claims: dict = Depends(get_claims))
     token, _ = sign_qr(trail_id=trail_id, org_id=uuid.UUID(org_ids[0]), issuer_id=uuid.UUID(claims["sub"]))
     img = qrcode.make(f"/checkin/scan?token={token}")
     from io import BytesIO
-    b = BytesIO(); img.save(b, format="PNG")
+    b = BytesIO()
+    try:
+        img.save(b, format="PNG")
+    except TypeError:
+        # Handle backends like PyPNG that do not accept the format argument
+        try:
+            pil_img = img.get_image()
+            pil_img.save(b, format="PNG")
+        except Exception:
+            img.save(b)
     return Response(content=b.getvalue(), media_type="image/png")
 
 # --- 2) Attendee scans QR: POST with token; verify+record check-in with replay-guard and rate-limit
