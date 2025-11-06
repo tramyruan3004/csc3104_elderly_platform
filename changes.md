@@ -23,3 +23,6 @@
 - Authored a consolidated setup guide at `csc3104_elderly_platform/Instructions.md` covering Docker services, Alembic migrations, and frontend startup steps.
 - Senior PWA leaderboard now renders both system-wide and community rankings; adds organisation selector for multi-affiliated seniors and shares refreshed UI blocks across tabs (`cloud-project/apps/senior-pwa/src/pages/Leaderboard.jsx`).
 - Implemented attendee-friendly Points & Vouchers APIs: scoped balance/ledger access, filtered voucher listings, enriched redemption payloads, and census ordering to support the senior PWA rewards view (`points-vouchers-rules-svc/app/routers/points.py`, `.../vouchers.py`, `.../schemas.py`).
+- Added organiser endpoint to page through organisation-wide point balances (`points-vouchers-rules-svc/app/routers/points.py`).
+- Self-registration endpoints now revive cancelled/rejected records instead of erroring, enabling seniors and organisers to rejoin trails without duplicate rows (`trails-activities-svc/app/routers/registrations.py`).
+- Trails invites now cache the generated fallback secret so preview/register endpoints validate freshly minted tokens even when `INVITE_SECRET` is unset (`trails-activities-svc/app/core/config.py`).

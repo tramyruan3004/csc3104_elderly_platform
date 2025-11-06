@@ -17,13 +17,31 @@ class BalanceRead(BaseModel):
     balance: int
     updated_at: datetime | None = None
 
+
+class BalancePage(BaseModel):
+    items: list[BalanceRead]
+    total: int
+    limit: int
+    offset: int
+    has_more: bool
+
 class LedgerRead(BaseModel):
     id: UUID
+    user_id: UUID
+    org_id: UUID
     delta: int
     reason: str
     trail_id: UUID | None = None
     details: str | None = None
     occurred_at: datetime
+
+
+class LedgerPage(BaseModel):
+    items: list[LedgerRead]
+    total: int
+    limit: int
+    offset: int
+    has_more: bool
 
 
 class AdjustPointsRequest(BaseModel):

@@ -2,11 +2,11 @@ from __future__ import annotations
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 from ..deps import get_db, get_claims
 from ..models import UserPoints, PointsLedger
-from ..schemas import BalanceRead, LedgerRead, CheckinIngest, AdjustPointsRequest
+from ..schemas import BalanceRead, BalancePage, LedgerRead, LedgerPage, CheckinIngest, AdjustPointsRequest
 from ..services.points import award_checkin_points, adjust_points
 
 router = APIRouter(prefix="/points", tags=["points"])
@@ -34,6 +34,100 @@ def _ensure_reader_scope(claims: dict, org_id: uuid.UUID) -> None:
         return
     raise HTTPException(status_code=403, detail="Unsupported role for this resource")
 
+@router.get("/orgs/{org_id}/balances", response_model=BalancePage)
+async def org_balances(
+    org_id: uuid.UUID,
+    claims: dict = Depends(get_claims),
+    db: AsyncSession = Depends(get_db),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    user_id: uuid.UUID | None = Query(default=None),
+):
+    if not _allow_actor_for_org(claims, org_id) and claims.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Organiser/Service role with org scope required")
+
+    filters = [UserPoints.org_id == org_id]
+    if user_id is not None:
+        filters.append(UserPoints.user_id == user_id)
+
+    base_query = select(UserPoints).where(*filters)
+    total = (await db.execute(select(func.count()).select_from(UserPoints).where(*filters))).scalar_one()
+
+    rows = (
+        await db.execute(
+            base_query.order_by(UserPoints.updated_at.desc().nullslast(), UserPoints.user_id)
+            .offset(offset)
+            .limit(limit)
+        )
+    ).scalars().all()
+
+    items = [
+        BalanceRead(
+            user_id=row.user_id,
+            org_id=row.org_id,
+            balance=row.balance,
+            updated_at=row.updated_at,
+        )
+        for row in rows
+    ]
+
+    return BalancePage(
+        items=items,
+        total=total,
+        limit=limit,
+        offset=offset,
+        has_more=offset + len(items) < total,
+    )
+
+@router.get("/orgs/{org_id}/ledger", response_model=LedgerPage)
+async def org_ledger(
+    org_id: uuid.UUID,
+    claims: dict = Depends(get_claims),
+    db: AsyncSession = Depends(get_db),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    user_id: uuid.UUID | None = Query(default=None),
+):
+    if not _allow_actor_for_org(claims, org_id) and claims.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Organiser/Service role with org scope required")
+
+    filters = [PointsLedger.org_id == org_id]
+    if user_id is not None:
+        filters.append(PointsLedger.user_id == user_id)
+
+    base_query = select(PointsLedger).where(*filters)
+    total = (await db.execute(select(func.count()).select_from(PointsLedger).where(*filters))).scalar_one()
+
+    rows = (
+        await db.execute(
+            base_query.order_by(PointsLedger.occurred_at.desc(), PointsLedger.user_id)
+            .offset(offset)
+            .limit(limit)
+        )
+    ).scalars().all()
+
+    items = [
+        LedgerRead(
+            id=row.id,
+            user_id=row.user_id,
+            org_id=row.org_id,
+            delta=row.delta,
+            reason=row.reason,
+            trail_id=row.trail_id,
+            details=row.details,
+            occurred_at=row.occurred_at,
+        )
+        for row in rows
+    ]
+
+    return LedgerPage(
+        items=items,
+        total=total,
+        limit=limit,
+        offset=offset,
+        has_more=offset + len(items) < total,
+    )
+
 @router.get("/users/me/balance", response_model=BalanceRead)
 async def my_balance(org_id: uuid.UUID, claims: dict = Depends(get_claims), db: AsyncSession = Depends(get_db)):
     _ensure_reader_scope(claims, org_id)
@@ -59,7 +153,19 @@ async def my_ledger(
         .limit(limit)
     )
     rows = (await db.execute(stmt)).scalars().all()
-    return [LedgerRead(id=r.id, delta=r.delta, reason=r.reason, trail_id=r.trail_id, details=r.details, occurred_at=r.occurred_at) for r in rows]
+    return [
+        LedgerRead(
+            id=r.id,
+            user_id=user_id,
+            org_id=org_id,
+            delta=r.delta,
+            reason=r.reason,
+            trail_id=r.trail_id,
+            details=r.details,
+            occurred_at=r.occurred_at,
+        )
+        for r in rows
+    ]
 
 # Ingest from qr-checkin-svc (server-to-server; use organiser or service token)
 @router.post("/ingest/checkin")

@@ -39,14 +39,28 @@ async def self_register(
         raise HTTPException(status_code=404, detail="Trail not available")
 
     user_id = uuid.UUID(claims["sub"])
+    confirmed_count = await _count_confirmed(db, t.id)
+    status_val = RegStatus.PENDING if confirmed_count < t.capacity else RegStatus.WAITLISTED
+
     existing = (await db.execute(select(Registration).where(
         Registration.trail_id == t.id, Registration.user_id == user_id
     ))).scalar_one_or_none()
     if existing:
+        if existing.status in (RegStatus.CANCELLED, RegStatus.REJECTED):
+            existing.status = status_val
+            existing.note = payload.note
+            existing.org_id = t.org_id
+            await db.commit()
+            await db.refresh(existing)
+            return RegistrationRead(
+                id=existing.id,
+                trail_id=existing.trail_id,
+                user_id=existing.user_id,
+                org_id=existing.org_id,
+                status=existing.status.value,
+                note=existing.note,
+            )
         raise HTTPException(status_code=409, detail="Already registered")
-
-    confirmed_count = await _count_confirmed(db, t.id)
-    status_val = RegStatus.PENDING if confirmed_count < t.capacity else RegStatus.WAITLISTED
 
     reg = Registration(trail_id=t.id, user_id=user_id, org_id=t.org_id, status=status_val, note=payload.note)
     db.add(reg)
@@ -71,14 +85,28 @@ async def organiser_register(
     if t.status not in (TrailStatus.PUBLISHED,):
         raise HTTPException(status_code=400, detail="Trail is not accepting registrations")
 
+    confirmed_count = await _count_confirmed(db, t.id)
+    status_val = RegStatus.PENDING if confirmed_count < t.capacity else RegStatus.WAITLISTED
+
     existing = (await db.execute(select(Registration).where(
         Registration.trail_id == t.id, Registration.user_id == payload.user_id
     ))).scalar_one_or_none()
     if existing:
+        if existing.status in (RegStatus.CANCELLED, RegStatus.REJECTED):
+            existing.status = status_val
+            existing.note = payload.note
+            existing.org_id = t.org_id
+            await db.commit()
+            await db.refresh(existing)
+            return RegistrationRead(
+                id=existing.id,
+                trail_id=existing.trail_id,
+                user_id=existing.user_id,
+                org_id=existing.org_id,
+                status=existing.status.value,
+                note=existing.note,
+            )
         raise HTTPException(status_code=409, detail="Already registered")
-
-    confirmed_count = await _count_confirmed(db, t.id)
-    status_val = RegStatus.PENDING if confirmed_count < t.capacity else RegStatus.WAITLISTED
 
     reg = Registration(trail_id=t.id, user_id=payload.user_id, org_id=t.org_id, status=status_val, note=payload.note)
     db.add(reg)

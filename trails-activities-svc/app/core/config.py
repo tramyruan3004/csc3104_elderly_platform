@@ -21,7 +21,11 @@ class Settings(BaseSettings):
     # ephemeral fallback if no INVITE_SECRET provided
     @property
     def invite_secret_effective(self) -> str:
-        return self.invite_secret or secrets.token_urlsafe(48)
+        if self.invite_secret:
+            return self.invite_secret
+        if not hasattr(self, "_invite_secret_cache"):
+            setattr(self, "_invite_secret_cache", secrets.token_urlsafe(48))
+        return getattr(self, "_invite_secret_cache")
 
 _settings: Settings | None = None
 
