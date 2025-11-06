@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import AsyncGenerator
+
 from fastapi import Depends, HTTPException, status, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 import jwt
@@ -12,9 +14,14 @@ from sqlalchemy import select
 
 settings = get_settings()
 
-async def get_db() -> AsyncSession:
-    async for s in get_session():
-        return s
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    async for session in get_session():
+        try:
+            yield session
+        finally:
+            # ensure any pending transaction is rolled back before returning the session
+            if session.in_transaction():
+                await session.rollback()
 
 
 async def get_current_user(

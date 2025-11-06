@@ -5,6 +5,8 @@
 
 - Updated checklist.md to mark exercised auth endpoints based on recent logs. 
 
+- Documented invite endpoints in checklist.md as powering the new senior QR join flow.
+
 - Created 	esting branch in parent repo and all submodules; updated .gitmodules to track the new branches. 
 
 - Added organiser username/password support in authentication service (new optional credential fields, /auth/organisers/signup and /auth/organisers/login endpoints). Requires database migration to add admin credential columns.

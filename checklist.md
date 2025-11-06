@@ -35,8 +35,8 @@ Legend: ✅ Implemented in client • ✔️ Planned / pending implementation �
 | POST /registrations/{registration_id}/reject | ⬜ | ✅ | |
 | POST /registrations/{registration_id}/cancel | ✅ | ✅ | Seniors can self-cancel |
 | POST /invites/trails/{trail_id} | ✔️ | ✅ | Invite flow |
-| GET /invites/{token} | ✔️ | ? | |
-| POST /invites/{token}/register | ✔️ | ? | |
+| GET /invites/{token} | ✔️ | ? | Used by PWA invite entry & /join scanner |
+| POST /invites/{token}/register | ✔️ | ? | Auto-joins seniors after scan |
 
 ## QR Check-in Service (http://localhost:8004)
 | Endpoint | Senior PWA | Organiser Dashboard | Notes |
