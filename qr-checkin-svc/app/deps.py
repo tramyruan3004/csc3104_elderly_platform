@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .db import get_session
 from .core.config import get_settings
+from .services.auth_client import acquire_service_token
 
 settings = get_settings()
 
@@ -64,8 +65,16 @@ async def trails_get_registration_status(*, token: str, trail_id: str, user_id: 
         return None
 
 async def points_award_checkin(*, token: str, trail_id: str, user_id: str, org_id: str, checked_at: str):
+    """
+    Notify the points service about a completed check-in.
+
+    We prefer a cached service token (so the attendee token never needs organiser scope).
+    If service credentials are missing or the mint fails, fall back to the attendee token.
+    """
     url = f"{settings.points_base_url}/points/ingest/checkin"
-    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    service_token = await acquire_service_token(org_ids=[org_id])
+    auth_token = service_token or token
+    headers = {"Authorization": f"Bearer {auth_token}", "Content-Type": "application/json"}
     payload = {"trail_id": trail_id, "user_id": user_id, "org_id": org_id, "checked_at": checked_at}
     async with httpx.AsyncClient() as client:
         try:

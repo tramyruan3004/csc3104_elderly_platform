@@ -22,7 +22,9 @@ def _ensure_view_scope(claims: dict, org_id: uuid.UUID) -> None:
     org_str = str(org_id)
     if role == "attend_user":
         scoped_orgs = {str(x) for x in claims.get("org_ids", []) if x}
-        if scoped_orgs and org_str not in scoped_orgs:
+        if not scoped_orgs:
+            raise HTTPException(status_code=403, detail="Join an organisation to access rewards")
+        if org_str not in scoped_orgs:
             raise HTTPException(status_code=403, detail="You are not a member of this organisation")
         return
     if role in {"organiser", "service"}:

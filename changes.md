@@ -7,6 +7,14 @@
 
 - Documented invite endpoints in checklist.md as powering the new senior QR join flow.
 
+- Points/vouchers services now reject attendees without an organisation assignment, and QR check-ins ensure the scanning senior belongs to the targeted organisation (`points-vouchers-rules-svc/app/routers/points.py`, `.../vouchers.py`, `qr-checkin-svc/app/routers/checkins.py`).
+- QR check-in service acquires a service token to call `/points/ingest/checkin` whenever NATS awarding is disabled, ensuring attendance automatically grants points without organiser intervention (`qr-checkin-svc/app/core/config.py`, `app/services/auth_client.py`, `app/deps.py`, `.env`, `k8s/all.yaml`).
+- Added `docs/backend-support.md` to capture the inter-service requirements for scan-to-join and organiser bulk balance/leaderboard flows.
+- Organiser dashboard overview metrics now source their values from live participants/trails data, replacing the temporary hardcoded numbers (`cloud-project/apps/organizer-dashboard/src/app/page.tsx`).
+- Introduced an organiser rewards management tab with voucher listing/creation/status controls plus the supporting API helpers (`cloud-project/apps/organizer-dashboard/src/app/rewards/page.tsx`, `src/services/vouchers.ts`, `src/app/layout.tsx`).
+- Navigation now exposes distinct Points vs. Rewards tabs so ledger adjustments and voucher management live on separate screens (`cloud-project/apps/organizer-dashboard/src/app/layout.tsx`, `src/app/points/page.tsx`, `src/app/rewards/page.tsx`).
+- Documented the outstanding backend work needed for per-trail reward overrides and clarified that the feature is currently unavailable (`cloud-project/docs/backend-support.md`).
+
 - Created 	esting branch in parent repo and all submodules; updated .gitmodules to track the new branches. 
 
 - Added organiser username/password support in authentication service (new optional credential fields, /auth/organisers/signup and /auth/organisers/login endpoints). Requires database migration to add admin credential columns.

@@ -7,7 +7,10 @@ class Settings(BaseSettings):
     database_url: str = Field(..., alias="DATABASE_URL")
 
     auth_jwks_url: str = Field(..., alias="AUTH_JWKS_URL")
+    auth_base_url: str = Field("http://localhost:8001", alias="AUTH_BASE_URL")
     token_issuer: str = Field("authentication-svc", alias="TOKEN_ISSUER")
+    service_client_id: str | None = Field(default=None, alias="SERVICE_CLIENT_ID")
+    service_client_secret: str | None = Field(default=None, alias="SERVICE_CLIENT_SECRET")
 
     trails_base_url: str = Field("http://localhost:8002", alias="TRAILS_BASE_URL")
     points_base_url: str = Field("http://localhost:8003", alias="POINTS_BASE_URL")

@@ -81,6 +81,12 @@ async def scan_and_checkin(
     org_id = uuid.UUID(qr["org_id"])
     attendee_id = uuid.UUID(claims["sub"])
 
+    claim_orgs = {str(x) for x in claims.get("org_ids", []) if x}
+    if not claim_orgs:
+        raise HTTPException(status_code=403, detail="Join an organisation before scanning activities")
+    if str(org_id) not in claim_orgs:
+        raise HTTPException(status_code=403, detail="You are not a member of this organisation")
+
     # b) replay guard on QR JTI (Redis)
     jti = qr.get("jti")
     ttl = settings.qr_ttl_seconds

@@ -457,7 +457,10 @@ spec:
           env:
             - { name: DATABASE_URL, value: "postgresql+psycopg_async://qr:qrpwd@qr-db.play.svc.cluster.local:5432/qr" }
             - { name: AUTH_JWKS_URL, value: "http://authentication-svc.play.svc.cluster.local:8001/auth/jwks" }
+            - { name: AUTH_BASE_URL, value: "http://authentication-svc.play.svc.cluster.local:8001" }
             - { name: TOKEN_ISSUER, value: "authentication-svc" }
+            - { name: SERVICE_CLIENT_ID, value: "qr-checkin" }
+            - { name: SERVICE_CLIENT_SECRET, value: "qr-checkin-secret" }
             - { name: TRAILS_BASE_URL, value: "http://trails-activities-svc.play.svc.cluster.local:8002" }
             - { name: POINTS_BASE_URL, value: "http://points-vouchers-rules-svc.play.svc.cluster.local:8003" }
             - { name: QR_SECRET, value: "change-this-for-prod" }
