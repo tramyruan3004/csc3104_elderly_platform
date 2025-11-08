@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from passlib.hash import bcrypt_sha256
 import psycopg
 
-conn = psycopg.connect("postgresql://auth:authpwd@127.0.0.1:54321/authentication")
+conn = psycopg.connect("postgresql://auth:authpwd@127.0.0.1:55321/authentication")
 user_id = uuid.uuid4()
 now = datetime.now(timezone.utc)
 name = "Admin User"

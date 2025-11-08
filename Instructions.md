@@ -40,6 +40,7 @@ cd c:\Users\syahm\Documents\GitHub\csc3104_elderly_platform
 ### 2.2 Start Core Services
 
 ```powershell
+docker compose build authentication-svc trails-activities-svc qr-checkin-svc points-vouchers-rules-svc leaderboard-attendance-svc
 docker compose up -d authentication-svc trails-activities-svc qr-checkin-svc points-vouchers-rules-svc leaderboard-attendance-svc
 ```
 
@@ -60,7 +61,7 @@ This launches:
 - Follow logs for a particular container: `docker compose logs -f authentication-svc`.
 - FastAPI docs (health check) are at `http://localhost:<port>/docs` (repeat for each service).
 
-### 2.4 Stop & Cleanup
+### 2.4 Stop & Cleanup (If needed)
 
 ```powershell
 docker compose down
@@ -72,7 +73,7 @@ Add `-v` to prune database volumes if you want a clean slate (`docker compose do
 
 ## 3. Database Migrations (Alembic)
 
-Each service with database state ships with migrations under its `alembic/` directory. Use **Python 3.11** (the same version our containers run) when executing Alembic. The authentication service now bundles Alembic in its requirements, so you can either run migrations inside the container or from the host using Python 3.11.
+Each service with database state ships with migrations under its `alembic/` directory. Use **Python 3.11** (the same version our containers run) when executing Alembic. The authentication database is exposed on `localhost:55321`; make sure any local `.env` matches that port so host-based tooling points at the running Postgres. The authentication service bundles Alembic in its requirements, so you can run migrations either inside the container or from the host with Python 3.11.
 
 ### 3.1 Apply Latest Migrations
 
@@ -81,6 +82,10 @@ Each service with database state ships with migrations under its `alembic/` dire
 ```powershell
 cd c:\Users\syahm\Documents\GitHub\csc3104_elderly_platform\authentication-svc
 python3.11 -m alembic upgrade head
+
+OR
+
+python -m alembic upgrade head
 ```
 
 The command prints the Postgres impl + transactional DDL messages when successful.
@@ -105,7 +110,22 @@ This copies the exact runtime environment used in Docker. Repeat for other servi
 4. Apply with `alembic upgrade head`.
 5. Commit the migration file along with model updates.
 
-### 3.3 Downgrade (Optional)
+### 3.3 Seed the default organiser & organisation
+
+After migrating a fresh database (for example after `docker compose down -v`), run the helper script so there is at least one organiser tied to an organisation:
+
+```powershell
+cd c:\Users\syahm\Documents\GitHub\csc3104_elderly_platform\authentication-svc
+python3.11 create_admin.py
+
+OR
+
+python create_admin.py
+```
+
+The script is idempotent: it creates (or reuses) the organiser using username `admin`/`password`, ensures the demo organisation exists, and links the organiser to it.
+
+### 3.4 Downgrade (Optional)
 
 ```powershell
 docker compose exec authentication-svc alembic downgrade -1
@@ -180,9 +200,8 @@ Reusable components and utilities reside under `cloud-project/packages/`. Restar
 ## 6. Quick Start Checklist
 
 1. `docker compose up -d ...` from `csc3104_elderly_platform`.
-2. `docker compose exec <svc> alembic upgrade head` for required services.
-3. `pnpm install` inside `cloud-project`.
-4. `pnpm --filter organizer-dashboard dev` and `pnpm --filter senior-pwa dev` in separate terminals.
-5. Load `http://localhost:3000` (organiser) and `http://localhost:5173` (senior) to verify everything works.
-
-Share this guide with anyone onboarding—they can get the entire stack running quickly using the steps above.
+2. Run Alembic migrations (`python3.11 -m alembic upgrade head` locally or `docker compose exec` inside the container).
+3. `python3.11 create_admin.py` inside `authentication-svc` to seed the organiser + organisation.
+4. `pnpm install` inside `cloud-project`.
+5. `pnpm --filter organizer-dashboard dev` and `pnpm --filter senior-pwa dev` in separate terminals.
+6. Load `http://localhost:3000` (organiser) and `http://localhost:5173` (senior) to verify everything works.
