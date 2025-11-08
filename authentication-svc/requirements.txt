@@ -21,3 +21,5 @@ python-dotenv==1.0.1
 
 prometheus-fastapi-instrumentator==7.1.0
 
+alembic==1.17.1
+

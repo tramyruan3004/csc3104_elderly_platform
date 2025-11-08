@@ -72,18 +72,29 @@ Add `-v` to prune database volumes if you want a clean slate (`docker compose do
 
 ## 3. Database Migrations (Alembic)
 
-Each service with database state ships with migrations under its `alembic/` directory. Run Alembic inside the container.
+Each service with database state ships with migrations under its `alembic/` directory. Use **Python 3.11** (the same version our containers run) when executing Alembic. The authentication service now bundles Alembic in its requirements, so you can either run migrations inside the container or from the host using Python 3.11.
 
 ### 3.1 Apply Latest Migrations
 
+#### Option A – Run from the host (recommended when coding locally)
+
 ```powershell
-# From csc3104_elderly_platform root
-docker compose exec authentication-svc alembic upgrade head
+cd c:\Users\syahm\Documents\GitHub\csc3104_elderly_platform\authentication-svc
+python3.11 -m alembic upgrade head
 ```
 
-Repeat for other services (e.g. `trails-activities-svc`) by changing the container name.
+The command prints the Postgres impl + transactional DDL messages when successful.
 
-### 3.2 Create a New Migration
+#### Option B – Run inside the container
+
+```powershell
+# From csc3104_elderly_platform root
+docker compose exec authentication-svc bash -c "cd /app && python3.11 -m alembic -c alembic.ini upgrade head"
+```
+
+This copies the exact runtime environment used in Docker. Repeat for other services (e.g. `trails-activities-svc`) by changing the container name and working directory.
+
+### 3.2 Create a New Migration (Not required)
 
 1. Modify SQLAlchemy models in the target service.
 2. Autogenerate a revision:
