@@ -52,3 +52,13 @@ async def require_organiser(user: User = Depends(get_current_user)) -> User:
     if user.role != UserRole.ORGANISER:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Organiser role required")
     return user
+
+
+async def require_attendee(user: User = Depends(get_current_user)) -> User:
+    if user.role != UserRole.ATTEND_USER:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Attendee role required")
+    return user
+
+
+async def require_active_user(user: User = Depends(get_current_user)) -> User:
+    return user

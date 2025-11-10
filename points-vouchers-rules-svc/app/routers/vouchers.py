@@ -84,17 +84,17 @@ async def redeem_voucher(voucher_id: uuid.UUID, claims: dict = Depends(get_claim
     if v.total_quantity is not None and v.redeemed_count >= v.total_quantity:
         raise HTTPException(status_code=409, detail="Voucher exhausted")
 
-    # points balance
-    up = (await db.execute(select(UserPoints).where(UserPoints.user_id == user_id, UserPoints.org_id == v.org_id))).scalar_one_or_none()
-    if not up or up.balance < v.points_cost:
-        raise HTTPException(status_code=400, detail="Insufficient points")
-
-    # deduct & log
-    up.balance -= v.points_cost
+    up = None
+    if v.points_cost > 0:
+        up = (await db.execute(select(UserPoints).where(UserPoints.user_id == user_id, UserPoints.org_id == v.org_id))).scalar_one_or_none()
+        if not up or up.balance < v.points_cost:
+            raise HTTPException(status_code=400, detail="Insufficient points")
+        up.balance -= v.points_cost
     red = Redemption(voucher_id=v.id, user_id=user_id, org_id=v.org_id)
     v.redeemed_count += 1
     db.add(red)
-    db.add(PointsLedger(user_id=user_id, org_id=v.org_id, delta=-v.points_cost, reason="voucher_redeem", details=f"voucher:{v.code}"))
+    if v.points_cost > 0:
+        db.add(PointsLedger(user_id=user_id, org_id=v.org_id, delta=-v.points_cost, reason="voucher_redeem", details=f"voucher:{v.code}"))
     await db.commit(); await db.refresh(v); await db.refresh(red)
     return RedemptionRead(
         id=red.id,

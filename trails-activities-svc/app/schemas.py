@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, model_validator
 Str255     = Annotated[str, Field(min_length=1, max_length=255)]
 OptStr255  = Annotated[str | None, Field(max_length=255)]
 PosInt     = Annotated[int, Field(gt=0)]
+NonNegativeInt = Annotated[int, Field(ge=0)]
 
 # ---- Trails ----
 class TrailCreate(BaseModel):
@@ -59,3 +60,52 @@ class RegistrationRead(BaseModel):
     org_id: UUID
     status: Literal["pending", "approved", "rejected", "cancelled"] | str  # adjust as needed
     note: str | None = None
+
+
+class UpcomingTrailSummary(BaseModel):
+    id: UUID
+    title: str
+    starts_at: datetime
+    ends_at: datetime
+    capacity: int
+    confirmed_registrations: int
+
+
+class TrailsOverview(BaseModel):
+    org_id: UUID
+    total_trails: int
+    draft: int
+    published: int
+    closed: int
+    cancelled: int
+    total_capacity: int
+    confirmed_registrations: int
+    upcoming: list[UpcomingTrailSummary] = Field(default_factory=list)
+
+
+class TrailActivityBase(BaseModel):
+    title: Str255
+    points: NonNegativeInt = 0
+    notes: OptStr255 = None
+
+
+class TrailActivityCreate(TrailActivityBase):
+    order: Annotated[int | None, Field(ge=1)] = None
+
+
+class TrailActivityUpdate(BaseModel):
+    title: Str255 | None = None
+    points: NonNegativeInt | None = None
+    notes: OptStr255 = None
+    order: Annotated[int | None, Field(ge=1)] = None
+
+
+class TrailActivityRead(BaseModel):
+    id: UUID
+    trail_id: UUID
+    title: str
+    points: int
+    notes: str | None
+    order: int
+    created_at: datetime
+    updated_at: datetime

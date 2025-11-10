@@ -11,7 +11,7 @@ from .core.config import get_settings
 from .core.nats import nats_connect, nats_close, subscribe_checkins
 from .services.ingest import ingest_checkin_evt
 from .services.ranks import rebuild_ranks_for_period
-from .routers import attendance, leaderboard
+from .routers import attendance, leaderboard, reports
 
 settings = get_settings()
 scheduler = AsyncIOScheduler()
@@ -86,6 +86,7 @@ app.add_middleware(
 
 app.include_router(attendance.router)
 app.include_router(leaderboard.router)
+app.include_router(reports.router)
 
 @app.get("/health")
 async def health():

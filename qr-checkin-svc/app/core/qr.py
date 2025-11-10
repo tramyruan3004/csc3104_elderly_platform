@@ -14,7 +14,16 @@ QR_ISS = "qr-checkin-svc"
 def _now():
     return datetime.now(timezone.utc)
 
-def sign_qr(*, trail_id: uuid.UUID, org_id: uuid.UUID, issuer_id: uuid.UUID, ttl_seconds: int | None = None) -> Tuple[str, int]:
+def sign_qr(
+    *,
+    trail_id: uuid.UUID,
+    org_id: uuid.UUID,
+    issuer_id: uuid.UUID,
+    ttl_seconds: int | None = None,
+    activity_id: uuid.UUID | None = None,
+    activity_order: int | None = None,
+    points: int | None = None,
+) -> Tuple[str, int]:
     exp = _now() + timedelta(seconds=ttl_seconds or settings.qr_ttl_seconds)
     payload: Dict[str, Any] = {
         "aud": QR_AUD,
@@ -27,6 +36,12 @@ def sign_qr(*, trail_id: uuid.UUID, org_id: uuid.UUID, issuer_id: uuid.UUID, ttl
         "org_id": str(org_id),
         "issuer_id": str(issuer_id),  # organiser who generated the QR
     }
+    if activity_id is not None:
+        payload["activity_id"] = str(activity_id)
+    if activity_order is not None:
+        payload["activity_order"] = int(activity_order)
+    if points is not None:
+        payload["points"] = int(points)
     token = jwt.encode(payload, settings.qr_secret_effective, algorithm="HS256")
     return token, int(exp.timestamp())
 

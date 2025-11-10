@@ -31,16 +31,48 @@ async def lifespan(app: FastAPI):
                 except Exception:
                     return  # malformed payload
 
-                # IMPORTANT: idempotency is recommended at your award layer.
-                # If award_checkin_points is already idempotent (e.g., checks ledger),
-                # this is safe. Otherwise consider adding a guard there.
+                activity_id = None
+                activity_order = None
+                points_override = None
+                new_attendance = evt.get("new_attendance") is True
+                new_activity = evt.get("new_activity") is True
+
+                raw_activity_id = evt.get("activity_id")
+                if raw_activity_id:
+                    try:
+                        activity_id = uuid.UUID(raw_activity_id)
+                    except Exception:
+                        activity_id = None
+
+                raw_order = evt.get("activity_order")
+                if raw_order is not None:
+                    try:
+                        activity_order = int(raw_order)
+                    except Exception:
+                        activity_order = None
+
+                raw_points = evt.get("points_awarded")
+                if raw_points is not None:
+                    try:
+                        points_override = int(raw_points)
+                    except Exception:
+                        points_override = None
+
+                has_activity_points = points_override is not None and points_override > 0
+                should_award = new_attendance or (new_activity and has_activity_points)
+                if not should_award:
+                    return
+
                 async with async_session_maker() as db:
                     await award_checkin_points(
                         db,
                         user_id=user_id,
                         org_id=org_id,
                         trail_id=trail_id,
-                        details="qr-checkin-nats"
+                        details="qr-checkin-nats",
+                        points_override=points_override,
+                        activity_id=activity_id,
+                        activity_order=activity_order,
                     )
 
             await subscribe_checkins(handle_checkin)

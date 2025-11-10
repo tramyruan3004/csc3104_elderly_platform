@@ -5,6 +5,7 @@ from uuid import UUID
 from datetime import datetime
 
 PosInt     = Annotated[int, Field(gt=0)]
+NonNegInt  = Annotated[int, Field(ge=0)]
 Name128    = Annotated[str, Field(min_length=1, max_length=128)]
 Code64     = Annotated[str, Field(min_length=3, max_length=64)]
 
@@ -83,12 +84,12 @@ class RuleRead(BaseModel):
 class VoucherCreate(BaseModel):
     code: Code64
     name: Name128
-    points_cost: PosInt
+    points_cost: NonNegInt
     total_quantity: PosInt | None = None  # None = unlimited
 
 class VoucherUpdate(BaseModel):
     name: Name128 | None = None
-    points_cost: PosInt | None = None
+    points_cost: NonNegInt | None = None
     status: Literal["active", "disabled"] | None = None
     total_quantity: PosInt | None = None
 
@@ -118,3 +119,23 @@ class CheckinIngest(BaseModel):
     user_id: UUID
     org_id: UUID
     checked_at: datetime
+    activity_id: UUID | None = None
+    activity_order: int | None = Field(default=None, ge=1)
+    points_delta: int | None = None
+    new_attendance: bool | None = None
+
+
+class PointsTopUser(BaseModel):
+    user_id: UUID
+    total_awarded: int
+
+
+class PointsSummary(BaseModel):
+    org_id: UUID
+    range_start: datetime
+    range_end: datetime
+    awarded_total: int
+    redeemed_total: int
+    net_delta: int
+    free_redemptions: int
+    top_earners: list[PointsTopUser] = Field(default_factory=list)

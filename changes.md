@@ -1,5 +1,7 @@
 # Change Log
 
+- QR scan API now prioritises the activity metadata embedded in the signed token, ignoring mismatched client payloads so per-activity QR codes always record the intended activity (`qr-checkin-svc/app/routers/checkins.py`).
+- Added CORS middleware to all FastAPI services to allow local frontends on ports 5173 and 3000.
 - Added CORS middleware to all FastAPI services to allow local frontends on ports 5173 and 3000.
 - Added checklist.md (backend root) listing every API endpoint for tracking coverage. 
 
@@ -36,3 +38,9 @@
 - Added organiser endpoint to page through organisation-wide point balances (`points-vouchers-rules-svc/app/routers/points.py`).
 - Self-registration endpoints now revive cancelled/rejected records instead of erroring, enabling seniors and organisers to rejoin trails without duplicate rows (`trails-activities-svc/app/routers/registrations.py`).
 - Trails invites now cache the generated fallback secret so preview/register endpoints validate freshly minted tokens even when `INVITE_SECRET` is unset (`trails-activities-svc/app/core/config.py`).
+- QR check-in tokens now allow seniors to retry a scan until the check-in actually succeeds: the service reserves a QR JTI and only burns it once the record is written, releasing the reservation on any failure (`qr-checkin-svc/app/core/redis.py`, `qr-checkin-svc/app/routers/checkins.py`). This prevents wasted tokens while still blocking replayed scans.
+- Organiser dashboard now renders and lets you download QR codes for invite links, so `/join` can be accessed by scanning a poster instead of copying URLs (`cloud-project/apps/organizer-dashboard/src/app/manageTrails/page.tsx`, `apps/organizer-dashboard/package.json`).
+- Seniors can now self-join any organisation immediately after signup: `/orgs` is readable by attendees, `/orgs/{id}/self-join` lets them add themselves, and both the Home banner and `/scan` page surface the picker that triggers the new endpoint (`authentication-svc/app/deps.py`, `.../routers/orgs.py`, `cloud-project/apps/senior-pwa/src/services/auth.js`, `.../pages/Home.jsx`, `.../pages/Scan.jsx`).
+- Rewards can now be free: voucher creation, validation, and redemption accept a `points_cost` of zero, and the senior Rewards page shows the redemption code immediately after a claim (`points-vouchers-rules-svc/app/models.py`, `app/schemas.py`, `app/routers/vouchers.py`, `cloud-project/apps/organizer-dashboard/src/app/rewards/page.tsx`, `apps/senior-pwa/src/pages/Rewards.jsx`).
+- Added organiser reporting APIs: auth service now returns organisation member counts, trails service exposes `/trails/reports/orgs/{id}/overview`, attendance service streams aggregated check-in summaries, and points service provides period-based award/redeem totals plus recent redemptions (`authentication-svc/app/routers/orgs.py`, `leaderboard-attendance-svc/app/routers/reports.py`, `trails-activities-svc/app/routers/trails.py`, `points-vouchers-rules-svc/app/routers/points.py`, corresponding schema updates).
+- Organizer dashboard Insights tab now consumes the live reporting endpoints to render snapshot cards (membership, attendance, trails, and points activity) alongside the existing leaderboard and roster views (`cloud-project/apps/organizer-dashboard/src/services/*.ts`, `apps/organizer-dashboard/src/app/insights/page.tsx`).

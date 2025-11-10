@@ -7,9 +7,20 @@ class QRCreateResponse(BaseModel):
     token: str
     expires_at: int
     url: str  # convenient URL you can turn into QR (frontends just encode this)
+    activity_id: UUID | None = None
+    activity_order: int | None = Field(default=None, ge=1)
+    points: int | None = Field(default=None, ge=0)
 
 class CheckinCreate(BaseModel):
     token: str  # signed short-TTL QR token
+    activity_id: UUID | None = None
+    activity_order: int | None = Field(default=None, ge=1)
+    points: int | None = Field(default=None, ge=0)
+
+
+class QRActivityCreate(BaseModel):
+    activity_order: int | None = Field(default=None, ge=1)
+    points: int | None = Field(default=None, ge=0)
 
 class CheckinRead(BaseModel):
     id: UUID
@@ -19,3 +30,8 @@ class CheckinRead(BaseModel):
     method: str
     checked_at: datetime
     checked_by: UUID | None = None
+    activity_id: UUID | None = None
+    activity_order: int | None = None
+    points_awarded: int | None = None
+    new_attendance: bool | None = None
+    new_activity: bool | None = None

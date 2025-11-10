@@ -71,3 +71,10 @@ class OrganizationRead(BaseModel):
 class AddMemberRequest(BaseModel):
     nric: str | None = None
     user_id: UUID | None = None
+
+
+class OrganizationStats(BaseModel):
+    org_id: UUID
+    organisers: int
+    attendees: int
+    total_members: int

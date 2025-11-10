@@ -90,7 +90,7 @@ class Voucher(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     __table_args__ = (
-        CheckConstraint("points_cost > 0", name="ck_voucher_cost"),
+        CheckConstraint("points_cost >= 0", name="ck_voucher_cost"),
         Index("ix_vouchers_org", "org_id"),
         Index("ix_vouchers_code", "code"),
     )

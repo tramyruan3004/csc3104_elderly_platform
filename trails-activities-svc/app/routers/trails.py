@@ -2,14 +2,23 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from datetime import datetime, timezone
+from fastapi import APIRouter, Depends, HTTPException, Response, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, update
 
 from ..deps import get_db, get_claims
-from ..models import Trail, TrailStatus, Registration, RegStatus
-from ..schemas import TrailCreate, TrailUpdate, TrailRead
+from ..models import Trail, TrailStatus, Registration, RegStatus, TrailActivity
+from ..schemas import (
+    TrailCreate,
+    TrailUpdate,
+    TrailRead,
+    TrailsOverview,
+    UpcomingTrailSummary,
+    TrailActivityCreate,
+    TrailActivityUpdate,
+    TrailActivityRead,
+)
 
 router = APIRouter(prefix="/trails", tags=["trails"])
 
@@ -18,6 +27,51 @@ def _ensure_organiser_for_org(claims, org_id: uuid.UUID):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Organiser role required")
     if str(org_id) not in [str(x) for x in claims.get("org_ids", [])]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this organization")
+
+
+def _ensure_report_scope(claims, org_id: uuid.UUID):
+    role = claims.get("role")
+    scoped_orgs = {str(x) for x in claims.get("org_ids", []) if x}
+    if role == "organiser":
+        if str(org_id) not in scoped_orgs:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this organisation")
+        return
+    if role == "service":
+        if scoped_orgs and str(org_id) not in scoped_orgs:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Service token not scoped for organisation")
+        return
+    if role == "admin":
+        return
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Reporting scope not allowed for role")
+
+
+async def _fetch_trail(db: AsyncSession, trail_id: uuid.UUID) -> Trail | None:
+    return (
+        await db.execute(select(Trail).where(Trail.id == trail_id))
+    ).scalar_one_or_none()
+
+
+async def _require_trail_for_organiser(
+    db: AsyncSession, trail_id: uuid.UUID, claims: dict
+) -> Trail:
+    trail = await _fetch_trail(db, trail_id)
+    if not trail:
+        raise HTTPException(status_code=404, detail="Trail not found")
+    _ensure_organiser_for_org(claims, trail.org_id)
+    return trail
+
+
+def _activity_to_schema(entity: TrailActivity) -> TrailActivityRead:
+    return TrailActivityRead(
+        id=entity.id,
+        trail_id=entity.trail_id,
+        title=entity.title,
+        points=entity.points,
+        notes=entity.notes,
+        order=entity.order,
+        created_at=entity.created_at,
+        updated_at=entity.updated_at,
+    )
 
 @router.get("", response_model=list[TrailRead])
 async def list_trails(
@@ -107,7 +161,7 @@ async def list_trails(
 
 @router.get("/{trail_id}", response_model=TrailRead)
 async def get_trail(trail_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    t = (await db.execute(select(Trail).where(Trail.id == trail_id))).scalar_one_or_none()
+    t = await _fetch_trail(db, trail_id)
     if not t:
         raise HTTPException(status_code=404, detail="Trail not found")
     return TrailRead(
@@ -125,11 +179,7 @@ async def list_attendees(
     claims: dict = Depends(get_claims),
     db: AsyncSession = Depends(get_db),
 ):
-    t = (await db.execute(select(Trail).where(Trail.id == trail_id))).scalar_one_or_none()
-    if not t:
-        raise HTTPException(status_code=404, detail="Trail not found")
-    # organiser only for that org
-    _ensure_organiser_for_org(claims, t.org_id)
+    await _require_trail_for_organiser(db, trail_id, claims)
 
     base_q = select(Registration).where(Registration.trail_id == trail_id)
     if status_filter:
@@ -190,16 +240,18 @@ async def update_trail(
     claims: dict = Depends(get_claims),
     db: AsyncSession = Depends(get_db),
 ):
-    t = (await db.execute(select(Trail).where(Trail.id == trail_id))).scalar_one_or_none()
-    if not t:
-        raise HTTPException(status_code=404, detail="Trail not found")
-    _ensure_organiser_for_org(claims, t.org_id)
+    t = await _require_trail_for_organiser(db, trail_id, claims)
 
-    if payload.title is not None: t.title = payload.title
-    if payload.description is not None: t.description = payload.description
-    if payload.starts_at is not None: t.starts_at = payload.starts_at
-    if payload.ends_at is not None: t.ends_at = payload.ends_at
-    if payload.location is not None: t.location = payload.location
+    if payload.title is not None:
+        t.title = payload.title
+    if payload.description is not None:
+        t.description = payload.description
+    if payload.starts_at is not None:
+        t.starts_at = payload.starts_at
+    if payload.ends_at is not None:
+        t.ends_at = payload.ends_at
+    if payload.location is not None:
+        t.location = payload.location
     if payload.capacity is not None:
         if payload.capacity <= 0:
             raise HTTPException(status_code=400, detail="Capacity must be > 0")
@@ -218,6 +270,257 @@ async def update_trail(
         capacity=t.capacity, status=t.status.value
     )
 
+
+@router.get("/{trail_id}/activities", response_model=list[TrailActivityRead])
+async def list_trail_activities(
+    trail_id: uuid.UUID,
+    claims: dict = Depends(get_claims),
+    db: AsyncSession = Depends(get_db),
+):
+    await _require_trail_for_organiser(db, trail_id, claims)
+    rows = (
+        await db.execute(
+            select(TrailActivity)
+            .where(TrailActivity.trail_id == trail_id)
+            .order_by(TrailActivity.order.asc())
+        )
+    ).scalars().all()
+    return [_activity_to_schema(row) for row in rows]
+
+
+@router.post("/{trail_id}/activities", response_model=TrailActivityRead, status_code=201)
+async def create_trail_activity(
+    trail_id: uuid.UUID,
+    payload: TrailActivityCreate,
+    claims: dict = Depends(get_claims),
+    db: AsyncSession = Depends(get_db),
+):
+    await _require_trail_for_organiser(db, trail_id, claims)
+
+    count = (
+        await db.execute(
+            select(func.count()).where(TrailActivity.trail_id == trail_id)
+        )
+    ).scalar_one()
+
+    desired_order = payload.order if payload.order is not None else count + 1
+    desired_order = max(1, int(desired_order))
+    if desired_order > count + 1:
+        desired_order = count + 1
+
+    if desired_order <= count:
+        await db.execute(
+            update(TrailActivity)
+            .where(
+                TrailActivity.trail_id == trail_id,
+                TrailActivity.order >= desired_order,
+            )
+            .values(order=TrailActivity.order + 1)
+        )
+
+    title = payload.title.strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="Title cannot be blank")
+
+    notes = None
+    if payload.notes is not None:
+        stripped = payload.notes.strip()
+        notes = stripped if stripped else None
+
+    entity = TrailActivity(
+        trail_id=trail_id,
+        order=desired_order,
+        title=title,
+        points=payload.points if payload.points is not None else 0,
+        notes=notes,
+    )
+    db.add(entity)
+    await db.commit()
+    await db.refresh(entity)
+    return _activity_to_schema(entity)
+
+
+@router.patch("/{trail_id}/activities/{activity_id}", response_model=TrailActivityRead)
+async def update_trail_activity(
+    trail_id: uuid.UUID,
+    activity_id: uuid.UUID,
+    payload: TrailActivityUpdate,
+    claims: dict = Depends(get_claims),
+    db: AsyncSession = Depends(get_db),
+):
+    await _require_trail_for_organiser(db, trail_id, claims)
+
+    activity = (
+        await db.execute(
+            select(TrailActivity).where(
+                TrailActivity.id == activity_id,
+                TrailActivity.trail_id == trail_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if not activity:
+        raise HTTPException(status_code=404, detail="Activity not found")
+
+    if payload.order is not None:
+        total = (
+            await db.execute(
+                select(func.count()).where(TrailActivity.trail_id == trail_id)
+            )
+        ).scalar_one()
+        desired_order = max(1, int(payload.order))
+        if desired_order > total:
+            desired_order = total
+        if desired_order != activity.order:
+            if desired_order < activity.order:
+                await db.execute(
+                    update(TrailActivity)
+                    .where(
+                        TrailActivity.trail_id == trail_id,
+                        TrailActivity.order >= desired_order,
+                        TrailActivity.order < activity.order,
+                        TrailActivity.id != activity.id,
+                    )
+                    .values(order=TrailActivity.order + 1)
+                )
+            else:
+                await db.execute(
+                    update(TrailActivity)
+                    .where(
+                        TrailActivity.trail_id == trail_id,
+                        TrailActivity.order <= desired_order,
+                        TrailActivity.order > activity.order,
+                        TrailActivity.id != activity.id,
+                    )
+                    .values(order=TrailActivity.order - 1)
+                )
+            activity.order = desired_order
+
+    if payload.title is not None:
+        stripped_title = payload.title.strip()
+        if not stripped_title:
+            raise HTTPException(status_code=400, detail="Title cannot be blank")
+        activity.title = stripped_title
+    if payload.points is not None:
+        activity.points = payload.points
+    if "notes" in payload.model_fields_set:
+        if payload.notes is None:
+            activity.notes = None
+        else:
+            stripped = payload.notes.strip()
+            activity.notes = stripped if stripped else None
+
+    await db.commit()
+    await db.refresh(activity)
+    return _activity_to_schema(activity)
+
+
+@router.delete("/{trail_id}/activities/{activity_id}", status_code=204)
+async def delete_trail_activity(
+    trail_id: uuid.UUID,
+    activity_id: uuid.UUID,
+    claims: dict = Depends(get_claims),
+    db: AsyncSession = Depends(get_db),
+):
+    await _require_trail_for_organiser(db, trail_id, claims)
+
+    activity = (
+        await db.execute(
+            select(TrailActivity).where(
+                TrailActivity.id == activity_id,
+                TrailActivity.trail_id == trail_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if not activity:
+        raise HTTPException(status_code=404, detail="Activity not found")
+
+    removed_order = activity.order
+    await db.delete(activity)
+    await db.execute(
+        update(TrailActivity)
+        .where(
+            TrailActivity.trail_id == trail_id,
+            TrailActivity.order > removed_order,
+        )
+        .values(order=TrailActivity.order - 1)
+    )
+    await db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/reports/orgs/{org_id}/overview", response_model=TrailsOverview)
+async def trails_overview(
+    org_id: uuid.UUID,
+    claims: dict = Depends(get_claims),
+    db: AsyncSession = Depends(get_db),
+):
+    _ensure_report_scope(claims, org_id)
+
+    status_counts = (
+        await db.execute(
+            select(Trail.status, func.count())
+            .where(Trail.org_id == org_id)
+            .group_by(Trail.status)
+        )
+    ).all()
+    status_map = {row[0]: int(row[1]) for row in status_counts}
+
+    total_capacity = (
+        await db.execute(
+            select(func.coalesce(func.sum(Trail.capacity), 0)).where(Trail.org_id == org_id)
+        )
+    ).scalar_one()
+
+    confirmed_total = (
+        await db.execute(
+            select(func.count())
+            .select_from(Registration)
+            .where(Registration.org_id == org_id, Registration.status == RegStatus.CONFIRMED)
+        )
+    ).scalar_one()
+
+    now = datetime.now(timezone.utc)
+    confirmed_expr = func.count(Registration.id).filter(Registration.status == RegStatus.CONFIRMED)
+    upcoming_rows = (
+        await db.execute(
+            select(Trail, confirmed_expr.label("confirmed"))
+            .outerjoin(Registration, Registration.trail_id == Trail.id)
+            .where(
+                Trail.org_id == org_id,
+                Trail.status == TrailStatus.PUBLISHED,
+                Trail.starts_at >= now,
+            )
+            .group_by(Trail.id)
+            .order_by(Trail.starts_at.asc())
+            .limit(3)
+        )
+    ).all()
+
+    upcoming = [
+        UpcomingTrailSummary(
+            id=trail.id,
+            title=trail.title,
+            starts_at=trail.starts_at,
+            ends_at=trail.ends_at,
+            capacity=trail.capacity,
+            confirmed_registrations=int(confirmed or 0),
+        )
+        for trail, confirmed in upcoming_rows
+    ]
+
+    total_trails = sum(status_map.values())
+    return TrailsOverview(
+        org_id=org_id,
+        total_trails=total_trails,
+        draft=status_map.get(TrailStatus.DRAFT, 0),
+        published=status_map.get(TrailStatus.PUBLISHED, 0),
+        closed=status_map.get(TrailStatus.CLOSED, 0),
+        cancelled=status_map.get(TrailStatus.CANCELLED, 0),
+        total_capacity=int(total_capacity or 0),
+        confirmed_registrations=int(confirmed_total or 0),
+        upcoming=upcoming,
+    )
+
 @router.get("/{trail_id}/registrations/by-user/{user_id}")
 async def registration_status_for_user(
     trail_id: uuid.UUID,
@@ -226,7 +529,7 @@ async def registration_status_for_user(
     db: AsyncSession = Depends(get_db),
 ):
     # 1) Trail must exist
-    t = (await db.execute(select(Trail).where(Trail.id == trail_id))).scalar_one_or_none()
+    t = await _fetch_trail(db, trail_id)
     if not t:
         raise HTTPException(status_code=404, detail="Trail not found")
 

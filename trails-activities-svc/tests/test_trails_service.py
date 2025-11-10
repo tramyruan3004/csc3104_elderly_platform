@@ -162,3 +162,113 @@ async def test_list_attendees_pagination():
             assert len(page_three["items"]) == 10
     finally:
         app.dependency_overrides.pop(get_claims, None)
+
+
+@pytest.mark.anyio
+async def test_activity_crud_and_ordering():
+    org_id = uuid4()
+    app.dependency_overrides[get_claims] = override_claims(
+        {"sub": str(uuid4()), "role": "organiser", "org_ids": [str(org_id)]}
+    )
+    try:
+        async with AsyncClient(app=app, base_url="http://testserver") as client:
+            now = datetime.now(timezone.utc)
+            create_trail_resp = await client.post(
+                f"/trails/orgs/{org_id}",
+                json={
+                    "title": "Forest Walk",
+                    "starts_at": (now + timedelta(hours=1)).isoformat(),
+                    "ends_at": (now + timedelta(hours=2)).isoformat(),
+                    "capacity": 40,
+                },
+            )
+            assert create_trail_resp.status_code == 201
+            trail_id = create_trail_resp.json()["id"]
+
+            first = await client.post(
+                f"/trails/{trail_id}/activities",
+                json={"title": "Warm up", "points": 5},
+            )
+            assert first.status_code == 201
+            first_payload = first.json()
+            assert first_payload["order"] == 1
+
+            second = await client.post(
+                f"/trails/{trail_id}/activities",
+                json={"title": "Scenic loop", "points": 10, "order": 1},
+            )
+            assert second.status_code == 201
+            second_payload = second.json()
+            assert second_payload["order"] == 1
+
+            listing = await client.get(f"/trails/{trail_id}/activities")
+            assert listing.status_code == 200
+            activities = listing.json()
+            assert [item["title"] for item in activities] == ["Scenic loop", "Warm up"]
+            assert [item["order"] for item in activities] == [1, 2]
+
+            # Move "Warm up" to the first position and update details
+            update_resp = await client.patch(
+                f"/trails/{trail_id}/activities/{first_payload['id']}",
+                json={"order": 1, "points": 12, "notes": "Bring water"},
+            )
+            assert update_resp.status_code == 200
+            updated_payload = update_resp.json()
+            assert updated_payload["order"] == 1
+            assert updated_payload["points"] == 12
+            assert updated_payload["notes"] == "Bring water"
+
+            reordered = await client.get(f"/trails/{trail_id}/activities")
+            assert reordered.status_code == 200
+            reordered_payload = reordered.json()
+            assert [item["title"] for item in reordered_payload] == ["Warm up", "Scenic loop"]
+            assert [item["order"] for item in reordered_payload] == [1, 2]
+
+            # Delete the second activity and ensure order compacts
+            delete_resp = await client.delete(
+                f"/trails/{trail_id}/activities/{second_payload['id']}"
+            )
+            assert delete_resp.status_code == 204
+
+            final_list = await client.get(f"/trails/{trail_id}/activities")
+            assert final_list.status_code == 200
+            final_payload = final_list.json()
+            assert len(final_payload) == 1
+            assert final_payload[0]["order"] == 1
+            assert final_payload[0]["title"] == "Warm up"
+    finally:
+        app.dependency_overrides.pop(get_claims, None)
+
+
+@pytest.mark.anyio
+async def test_activity_access_restricted_to_org():
+    org_id = uuid4()
+    other_org = uuid4()
+    organiser_claims = {"sub": str(uuid4()), "role": "organiser", "org_ids": [str(org_id)]}
+    app.dependency_overrides[get_claims] = override_claims(organiser_claims)
+    try:
+        async with AsyncClient(app=app, base_url="http://testserver") as client:
+            now = datetime.now(timezone.utc)
+            trail_resp = await client.post(
+                f"/trails/orgs/{org_id}",
+                json={
+                    "title": "Evening Stretch",
+                    "starts_at": (now + timedelta(hours=2)).isoformat(),
+                    "ends_at": (now + timedelta(hours=3)).isoformat(),
+                    "capacity": 20,
+                },
+            )
+            trail_resp.raise_for_status()
+            trail_id = trail_resp.json()["id"]
+    finally:
+        app.dependency_overrides.pop(get_claims, None)
+
+    app.dependency_overrides[get_claims] = override_claims(
+        {"sub": str(uuid4()), "role": "organiser", "org_ids": [str(other_org)]}
+    )
+    try:
+        async with AsyncClient(app=app, base_url="http://testserver") as client:
+            response = await client.get(f"/trails/{trail_id}/activities")
+        assert response.status_code == 403
+    finally:
+        app.dependency_overrides.pop(get_claims, None)

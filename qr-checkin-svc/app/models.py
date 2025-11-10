@@ -2,7 +2,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy.orm import declarative_base, Mapped, mapped_column
-from sqlalchemy import UniqueConstraint, Index
+from sqlalchemy import UniqueConstraint, Index, Integer
 from sqlalchemy.types import DateTime, String
 
 Base = declarative_base()
@@ -23,4 +23,22 @@ class Checkin(Base):
     __table_args__ = (
         UniqueConstraint("trail_id", "user_id", name="uq_checkin_per_user_per_trail"),
         Index("ix_checkins_trail_user", "trail_id", "user_id"),
+    )
+
+
+class ActivityCheckin(Base):
+    __tablename__ = "activity_checkins"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    trail_id: Mapped[uuid.UUID] = mapped_column(nullable=False, index=True)
+    activity_id: Mapped[uuid.UUID] = mapped_column(nullable=False, index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(nullable=False, index=True)
+    activity_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    points_awarded: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    scanned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("activity_id", "user_id", name="uq_activity_checkin_per_user"),
+        Index("ix_activity_checkins_user", "user_id"),
+        Index("ix_activity_checkins_trail", "trail_id"),
     )

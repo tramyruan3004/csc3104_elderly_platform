@@ -1,12 +1,24 @@
 from __future__ import annotations
 import uuid
+from datetime import datetime, timezone, timedelta
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, case
 
 from ..deps import get_db, get_claims
-from ..models import UserPoints, PointsLedger
-from ..schemas import BalanceRead, BalancePage, LedgerRead, LedgerPage, CheckinIngest, AdjustPointsRequest
+from ..models import UserPoints, PointsLedger, Voucher, Redemption
+from ..schemas import (
+    BalanceRead,
+    BalancePage,
+    LedgerRead,
+    LedgerPage,
+    CheckinIngest,
+    AdjustPointsRequest,
+    PointsSummary,
+    PointsTopUser,
+    RedemptionRead,
+)
 from ..services.points import award_checkin_points, adjust_points
 
 router = APIRouter(prefix="/points", tags=["points"])
@@ -35,6 +47,15 @@ def _ensure_reader_scope(claims: dict, org_id: uuid.UUID) -> None:
     if role == "admin":
         return
     raise HTTPException(status_code=403, detail="Unsupported role for this resource")
+
+
+def _resolve_range(date_from: datetime | None, date_to: datetime | None) -> tuple[datetime, datetime]:
+    now = datetime.now(timezone.utc)
+    end = date_to or now
+    start = date_from or (end - timedelta(days=30))
+    if start > end:
+        start, end = end, start
+    return start, end
 
 @router.get("/orgs/{org_id}/balances", response_model=BalancePage)
 async def org_balances(
@@ -130,6 +151,110 @@ async def org_ledger(
         has_more=offset + len(items) < total,
     )
 
+
+@router.get("/reports/orgs/{org_id}/points-summary", response_model=PointsSummary)
+async def org_points_summary(
+    org_id: uuid.UUID,
+    date_from: datetime | None = Query(default=None),
+    date_to: datetime | None = Query(default=None),
+    claims: dict = Depends(get_claims),
+    db: AsyncSession = Depends(get_db),
+):
+    if not _allow_actor_for_org(claims, org_id) and claims.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Organiser/Service role with org scope required")
+
+    range_start, range_end = _resolve_range(date_from, date_to)
+    filters = [
+        PointsLedger.org_id == org_id,
+        PointsLedger.occurred_at >= range_start,
+        PointsLedger.occurred_at <= range_end,
+    ]
+
+    awarded_expr = func.coalesce(func.sum(case((PointsLedger.delta > 0, PointsLedger.delta), else_=0)), 0)
+    redeemed_expr = func.coalesce(
+        func.sum(case((PointsLedger.delta < 0, -PointsLedger.delta), else_=0)), 0
+    )
+    totals = (await db.execute(select(awarded_expr, redeemed_expr).where(*filters))).first()
+    awarded_total = int(totals[0]) if totals else 0
+    redeemed_total = int(totals[1]) if totals else 0
+
+    top_rows = (
+        await db.execute(
+            select(PointsLedger.user_id, func.sum(PointsLedger.delta).label("awarded"))
+            .where(*filters, PointsLedger.delta > 0)
+            .group_by(PointsLedger.user_id)
+            .order_by(func.sum(PointsLedger.delta).desc())
+            .limit(5)
+        )
+    ).all()
+    top_earners = [
+        PointsTopUser(user_id=row.user_id, total_awarded=int(row.awarded))
+        for row in top_rows
+        if row.awarded
+    ]
+
+    free_redemptions = (
+        await db.execute(
+            select(func.count())
+            .select_from(Redemption)
+            .join(Voucher, Voucher.id == Redemption.voucher_id)
+            .where(
+                Redemption.org_id == org_id,
+                Redemption.redeemed_at >= range_start,
+                Redemption.redeemed_at <= range_end,
+                Voucher.points_cost == 0,
+            )
+        )
+    ).scalar_one()
+
+    return PointsSummary(
+        org_id=org_id,
+        range_start=range_start,
+        range_end=range_end,
+        awarded_total=awarded_total,
+        redeemed_total=redeemed_total,
+        net_delta=awarded_total - redeemed_total,
+        free_redemptions=int(free_redemptions or 0),
+        top_earners=top_earners,
+    )
+
+
+@router.get("/reports/orgs/{org_id}/redemptions/recent", response_model=list[RedemptionRead])
+async def org_recent_redemptions(
+    org_id: uuid.UUID,
+    limit: int = Query(10, ge=1, le=200),
+    claims: dict = Depends(get_claims),
+    db: AsyncSession = Depends(get_db),
+):
+    if not _allow_actor_for_org(claims, org_id) and claims.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Organiser/Service role with org scope required")
+
+    rows = (
+        await db.execute(
+            select(Redemption, Voucher)
+            .join(Voucher, Voucher.id == Redemption.voucher_id)
+            .where(Redemption.org_id == org_id)
+            .order_by(Redemption.redeemed_at.desc())
+            .limit(limit)
+        )
+    ).all()
+
+    results: list[RedemptionRead] = []
+    for redemption, voucher in rows:
+        results.append(
+            RedemptionRead(
+                id=redemption.id,
+                voucher_id=redemption.voucher_id,
+                user_id=redemption.user_id,
+                org_id=redemption.org_id,
+                status=redemption.status.value,
+                redeemed_at=redemption.redeemed_at,
+                voucher_name=voucher.name,
+                voucher_code=voucher.code,
+            )
+        )
+    return results
+
 @router.get("/users/me/balance", response_model=BalanceRead)
 async def my_balance(org_id: uuid.UUID, claims: dict = Depends(get_claims), db: AsyncSession = Depends(get_db)):
     _ensure_reader_scope(claims, org_id)
@@ -193,7 +318,10 @@ async def ingest_checkin(payload: CheckinIngest, claims: dict = Depends(get_clai
         user_id=payload.user_id,
         org_id=payload.org_id,
         trail_id=payload.trail_id,
-        details="qr-checkin"
+        details="qr-checkin",
+        points_override=payload.points_delta,
+        activity_id=payload.activity_id,
+        activity_order=payload.activity_order,
     )
     return {"awarded": pts}
 

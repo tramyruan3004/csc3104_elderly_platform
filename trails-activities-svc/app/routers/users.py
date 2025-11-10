@@ -1,15 +1,28 @@
 from __future__ import annotations
 
 import uuid
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 
 from ..deps import get_db, get_claims
-from ..models import Registration, RegStatus, Trail
-from ..schemas import RegistrationRead, TrailRead
+from ..models import Registration, RegStatus, Trail, TrailActivity
+from ..schemas import RegistrationRead, TrailRead, TrailActivityRead
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+
+def _activity_to_schema(entity: TrailActivity) -> TrailActivityRead:
+    return TrailActivityRead(
+        id=entity.id,
+        trail_id=entity.trail_id,
+        title=entity.title,
+        points=entity.points,
+        notes=entity.notes,
+        order=entity.order,
+        created_at=entity.created_at,
+        updated_at=entity.updated_at,
+    )
 
 @router.get("/me/registrations")
 async def my_registrations(claims: dict = Depends(get_claims), db: AsyncSession = Depends(get_db)):
@@ -36,3 +49,32 @@ async def my_confirmed_trails(claims: dict = Depends(get_claims), db: AsyncSessi
             capacity=t.capacity, status=t.status.value
         ) for t in rows
     ]
+
+
+@router.get("/me/trails/{trail_id}/activities", response_model=list[TrailActivityRead])
+async def my_trail_activities(
+    trail_id: uuid.UUID,
+    claims: dict = Depends(get_claims),
+    db: AsyncSession = Depends(get_db),
+):
+    user_id = uuid.UUID(claims["sub"])
+    reg = (
+        await db.execute(
+            select(Registration).where(
+                Registration.trail_id == trail_id,
+                Registration.user_id == user_id,
+                Registration.status == RegStatus.CONFIRMED,
+            )
+        )
+    ).scalar_one_or_none()
+    if not reg:
+        raise HTTPException(status_code=403, detail="Join and confirm the trail before viewing activities")
+
+    rows = (
+        await db.execute(
+            select(TrailActivity)
+            .where(TrailActivity.trail_id == trail_id)
+            .order_by(TrailActivity.order.asc())
+        )
+    ).scalars().all()
+    return [_activity_to_schema(row) for row in rows]

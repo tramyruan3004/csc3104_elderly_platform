@@ -64,7 +64,18 @@ async def trails_get_registration_status(*, token: str, trail_id: str, user_id: 
             return r.json().get("status")
         return None
 
-async def points_award_checkin(*, token: str, trail_id: str, user_id: str, org_id: str, checked_at: str):
+async def points_award_checkin(
+    *,
+    token: str,
+    trail_id: str,
+    user_id: str,
+    org_id: str,
+    checked_at: str,
+    activity_id: str | None = None,
+    activity_order: int | None = None,
+    points_delta: int | None = None,
+    new_attendance: bool | None = None,
+):
     """
     Notify the points service about a completed check-in.
 
@@ -75,7 +86,20 @@ async def points_award_checkin(*, token: str, trail_id: str, user_id: str, org_i
     service_token = await acquire_service_token(org_ids=[org_id])
     auth_token = service_token or token
     headers = {"Authorization": f"Bearer {auth_token}", "Content-Type": "application/json"}
-    payload = {"trail_id": trail_id, "user_id": user_id, "org_id": org_id, "checked_at": checked_at}
+    payload = {
+        "trail_id": trail_id,
+        "user_id": user_id,
+        "org_id": org_id,
+        "checked_at": checked_at,
+    }
+    if activity_id is not None:
+        payload["activity_id"] = activity_id
+    if activity_order is not None:
+        payload["activity_order"] = activity_order
+    if points_delta is not None:
+        payload["points_delta"] = points_delta
+    if new_attendance is not None:
+        payload["new_attendance"] = new_attendance
     async with httpx.AsyncClient() as client:
         try:
             await client.post(url, headers=headers, json=payload, timeout=5.0)

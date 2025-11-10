@@ -30,13 +30,58 @@ async def _get_or_create_balance(db: AsyncSession, user_id: uuid.UUID, org_id: u
     await db.flush()
     return up
 
-async def award_checkin_points(db: AsyncSession, *, user_id: uuid.UUID, org_id: uuid.UUID, trail_id: uuid.UUID, details: str | None = None) -> int:
-    pts = await _get_rule_points(db, org_id, RuleType.CHECKIN)
+async def award_checkin_points(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    org_id: uuid.UUID,
+    trail_id: uuid.UUID,
+    details: str | None = None,
+    points_override: int | None = None,
+    activity_id: uuid.UUID | None = None,
+    activity_order: int | None = None,
+) -> int:
+    pts = points_override if points_override is not None else await _get_rule_points(db, org_id, RuleType.CHECKIN)
     if pts <= 0:
         return 0
     bal = await _get_or_create_balance(db, user_id, org_id)
+    reason = "activity_checkin" if activity_id else "checkin"
+
+    detail_parts: list[str] = []
+    if activity_id:
+        detail_parts.append(f"activity={activity_id}")
+    if activity_order is not None:
+        detail_parts.append(f"order={activity_order}")
+    if details:
+        detail_parts.append(details)
+    detail_str = ";".join(detail_parts) if detail_parts else (details or "qr-checkin")
+
+    if activity_id:
+        existing = (
+            await db.execute(
+                select(PointsLedger).where(
+                    PointsLedger.user_id == user_id,
+                    PointsLedger.org_id == org_id,
+                    PointsLedger.reason == reason,
+                    PointsLedger.trail_id == trail_id,
+                    PointsLedger.details == detail_str,
+                )
+            )
+        ).scalar_one_or_none()
+        if existing:
+            return 0
+
     bal.balance += pts
-    db.add(PointsLedger(user_id=user_id, org_id=org_id, delta=pts, reason="checkin", trail_id=trail_id, details=details))
+    db.add(
+        PointsLedger(
+            user_id=user_id,
+            org_id=org_id,
+            delta=pts,
+            reason=reason,
+            trail_id=trail_id,
+            details=detail_str,
+        )
+    )
     await db.commit()
     return pts
 

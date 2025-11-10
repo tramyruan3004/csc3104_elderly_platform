@@ -62,6 +62,13 @@ class Trail(Base):
         "Registration", back_populates="trail", cascade="all, delete-orphan"
     )
 
+    activities: Mapped[list["TrailActivity"]] = relationship(
+        "TrailActivity",
+        back_populates="trail",
+        cascade="all, delete-orphan",
+        order_by="TrailActivity.order",
+    )
+
 class Registration(Base):
     __tablename__ = "registrations"
 
@@ -87,3 +94,33 @@ class Registration(Base):
     )
 
     trail: Mapped[Trail] = relationship("Trail", back_populates="registrations")
+
+
+class TrailActivity(Base):
+    __tablename__ = "trail_activities"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    trail_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("trails.id", ondelete="CASCADE"), nullable=False
+    )
+    order: Mapped[int] = mapped_column("position", Integer, nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    points: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    notes: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+    CheckConstraint("position >= 1", name="ck_trail_activity_order_pos"),
+    CheckConstraint("points >= 0", name="ck_trail_activity_points_nonneg"),
+    UniqueConstraint("trail_id", "position", name="uq_trail_activity_order"),
+    Index("ix_trail_activity_trail_order", "trail_id", "position"),
+    )
+
+    trail: Mapped[Trail] = relationship("Trail", back_populates="activities")

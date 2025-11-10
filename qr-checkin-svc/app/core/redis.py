@@ -21,16 +21,26 @@ async def ping_redis() -> bool:
         return False
 
 # ---- Replay guard for QR JTI ----
-async def used_qr_once(jti: str, ttl_seconds: int) -> bool:
+async def reserve_qr_token(jti: str, ttl_seconds: int) -> bool:
     """
-    Return True if we successfully mark this JTI as used (first time),
-    return False if it's already present (replay).
+    Try to reserve a QR token. Returns True if this caller now owns the token,
+    or False if another scan already completed with the same JTI.
     """
     r = get_redis()
-    # SET if Not eXists with EXpire
-    # NX ensures first caller wins, others see False
-    ok = await r.set(f"qr:jti:{jti}", "1", ex=ttl_seconds, nx=True)
+    ok = await r.set(f"qr:jti:{jti}", "pending", ex=ttl_seconds, nx=True)
     return bool(ok)
+
+
+async def release_qr_token(jti: str) -> None:
+    """
+    Release a reserved token so the attendee can retry (used when the scan fails
+    before the check-in is committed).
+    """
+    r = get_redis()
+    try:
+        await r.delete(f"qr:jti:{jti}")
+    except Exception:
+        pass
 
 # ---- Simple fixed-window rate limit per IP/route ----
 async def allow_request(ip: str, route_key: str) -> bool:
