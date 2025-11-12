@@ -6,7 +6,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from urllib.parse import urlencode
 
-from ..deps import get_db, get_claims, trails_get_registration_status, points_award_checkin
+from ..deps import (
+    get_db,
+    get_claims,
+    trails_get_registration_status,
+    points_award_checkin,
+    trails_get_trail_details,
+)
 from ..core.qr import sign_qr, verify_qr
 from ..schemas import QRCreateResponse, CheckinCreate, CheckinRead, QRActivityCreate
 from ..models import Checkin
@@ -21,16 +27,73 @@ router = APIRouter(prefix="/checkin", tags=["checkin"])
 def _now_iso():
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
+
+def _parse_iso_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        normalized = value.replace("Z", "+00:00")
+        return datetime.fromisoformat(normalized)
+    except Exception:
+        return None
+
+
+async def _determine_qr_ttl_seconds(
+    *,
+    trail_id: uuid.UUID,
+    org_id: uuid.UUID,
+    authorization: str | None,
+) -> int:
+    base_ttl = settings.qr_ttl_seconds
+    details = await trails_get_trail_details(
+        trail_id=str(trail_id),
+        org_id=str(org_id),
+        authorization_header=authorization,
+    )
+    if not details:
+        return base_ttl
+
+    ends_at = _parse_iso_datetime(details.get("ends_at"))
+    if not ends_at:
+        return base_ttl
+
+    now = datetime.now(timezone.utc)
+    remaining = int((ends_at - now).total_seconds())
+    if remaining <= 0:
+        return base_ttl
+
+    grace = settings.qr_trail_grace_seconds if settings.qr_trail_grace_seconds > 0 else 0
+    desired = remaining + grace
+    if settings.qr_max_ttl_seconds > 0:
+        desired = min(desired, settings.qr_max_ttl_seconds)
+
+    return max(base_ttl, desired)
+
 # --- 1) Organiser generates a signed QR token for a trail (short TTL)
 @router.post("/trails/{trail_id}/qr", response_model=QRCreateResponse, status_code=201)
-async def create_qr_for_trail(trail_id: uuid.UUID, claims: dict = Depends(get_claims), db: AsyncSession = Depends(get_db)):
+async def create_qr_for_trail(
+    trail_id: uuid.UUID,
+    claims: dict = Depends(get_claims),
+    db: AsyncSession = Depends(get_db),
+    authorization: str | None = Header(default=None),
+):
     if claims.get("role") != "organiser":
         raise HTTPException(status_code=403, detail="Organiser role required")
     org_ids = [uuid.UUID(x) for x in claims.get("org_ids", [])]
     if not org_ids:
         raise HTTPException(status_code=400, detail="Organiser has no organisations")
     org_id = org_ids[0]
-    token, exp = sign_qr(trail_id=trail_id, org_id=org_id, issuer_id=uuid.UUID(claims["sub"]))
+    ttl_seconds = await _determine_qr_ttl_seconds(
+        trail_id=trail_id,
+        org_id=org_id,
+        authorization=authorization,
+    )
+    token, exp = sign_qr(
+        trail_id=trail_id,
+        org_id=org_id,
+        issuer_id=uuid.UUID(claims["sub"]),
+        ttl_seconds=ttl_seconds,
+    )
     url = f"/checkin/scan?{urlencode({'token': token})}"
     return QRCreateResponse(token=token, expires_at=exp, url=url)
 
@@ -46,6 +109,7 @@ async def create_qr_for_activity(
     payload: QRActivityCreate | None = Body(default=None),
     claims: dict = Depends(get_claims),
     db: AsyncSession = Depends(get_db),
+    authorization: str | None = Header(default=None),
 ):
     if claims.get("role") != "organiser":
         raise HTTPException(status_code=403, detail="Organiser role required")
@@ -57,6 +121,12 @@ async def create_qr_for_activity(
     activity_order = payload.activity_order if payload else None
     points = payload.points if payload else None
 
+    ttl_seconds = await _determine_qr_ttl_seconds(
+        trail_id=trail_id,
+        org_id=org_id,
+        authorization=authorization,
+    )
+
     token, exp = sign_qr(
         trail_id=trail_id,
         org_id=org_id,
@@ -64,6 +134,7 @@ async def create_qr_for_activity(
         activity_id=activity_id,
         activity_order=activity_order,
         points=points,
+        ttl_seconds=ttl_seconds,
     )
     query: dict[str, str] = {"token": token, "t": str(activity_id)}
     if activity_order is not None:
@@ -82,7 +153,11 @@ async def create_qr_for_activity(
 
 # (Optional) PNG for kiosk demo
 @router.get("/trails/{trail_id}/qr.png")
-async def create_qr_png(trail_id: uuid.UUID, claims: dict = Depends(get_claims)):
+async def create_qr_png(
+    trail_id: uuid.UUID,
+    claims: dict = Depends(get_claims),
+    authorization: str | None = Header(default=None),
+):
     try:
         import qrcode  # type: ignore[import]
     except ImportError as exc:
@@ -92,7 +167,18 @@ async def create_qr_png(trail_id: uuid.UUID, claims: dict = Depends(get_claims))
     org_ids = claims.get("org_ids", [])
     if not org_ids:
         raise HTTPException(status_code=400, detail="No org")
-    token, _ = sign_qr(trail_id=trail_id, org_id=uuid.UUID(org_ids[0]), issuer_id=uuid.UUID(claims["sub"]))
+    org_uuid = uuid.UUID(org_ids[0])
+    ttl_seconds = await _determine_qr_ttl_seconds(
+        trail_id=trail_id,
+        org_id=org_uuid,
+        authorization=authorization,
+    )
+    token, _ = sign_qr(
+        trail_id=trail_id,
+        org_id=org_uuid,
+        issuer_id=uuid.UUID(claims["sub"]),
+        ttl_seconds=ttl_seconds,
+    )
     img = qrcode.make(f"/checkin/scan?token={token}")
     from io import BytesIO
     b = BytesIO()
@@ -182,6 +268,10 @@ async def scan_and_checkin(
     # b) replay guard on QR JTI (Redis)
     jti = qr.get("jti")
     ttl = settings.qr_ttl_seconds
+    exp_claim = qr.get("exp")
+    if isinstance(exp_claim, (int, float)):
+        now_ts = int(datetime.now(timezone.utc).timestamp())
+        ttl = max(1, int(exp_claim) - now_ts)
     if not jti:
         raise HTTPException(status_code=400, detail="QR token missing identifier")
     if not await reserve_qr_token(jti, ttl):

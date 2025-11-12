@@ -1,6 +1,7 @@
 # Change Log
 
 - QR scan API now prioritises the activity metadata embedded in the signed token, ignoring mismatched client payloads so per-activity QR codes always record the intended activity (`qr-checkin-svc/app/routers/checkins.py`).
+- QR token lifespan now stretches to the trail's end time (with a configurable grace window and max cap) so organisers can mint a code once per event instead of refreshing mid-session (`qr-checkin-svc/app/routers/checkins.py`, `app/deps.py`, `app/core/config.py`).
 - Added CORS middleware to all FastAPI services to allow local frontends on ports 5173 and 3000.
 - Added CORS middleware to all FastAPI services to allow local frontends on ports 5173 and 3000.
 - Added checklist.md (backend root) listing every API endpoint for tracking coverage. 

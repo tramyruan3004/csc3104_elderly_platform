@@ -64,6 +64,46 @@ async def trails_get_registration_status(*, token: str, trail_id: str, user_id: 
             return r.json().get("status")
         return None
 
+
+async def trails_get_trail_details(
+    *,
+    trail_id: str,
+    org_id: str | None = None,
+    authorization_header: str | None = None,
+) -> Dict[str, Any] | None:
+    """
+    Retrieve a single trail description, favouring a service token scoped to the
+    organiser's organisation and falling back to the caller's bearer token.
+    """
+    headers: Dict[str, str] = {}
+
+    service_token = None
+    if org_id:
+        service_token = await acquire_service_token(org_ids=[org_id])
+    bearer_token: str | None = None
+    if service_token:
+        bearer_token = service_token
+    elif authorization_header and authorization_header.lower().startswith("bearer "):
+        bearer_token = authorization_header.split(" ", 1)[1].strip()
+
+    if not bearer_token:
+        return None
+
+    headers["Authorization"] = f"Bearer {bearer_token}"
+    url = f"{settings.trails_base_url}/trails/{trail_id}"
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(url, headers=headers, timeout=5.0)
+        except Exception:
+            return None
+    if response.status_code != 200:
+        return None
+    try:
+        data = response.json()
+    except Exception:
+        return None
+    return data
+
 async def points_award_checkin(
     *,
     token: str,

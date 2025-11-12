@@ -17,6 +17,8 @@ class Settings(BaseSettings):
 
     qr_secret: str | None = Field(default=None, alias="QR_SECRET")
     qr_ttl_seconds: int = Field(default=120, alias="QR_TTL_SECONDS")
+    qr_trail_grace_seconds: int = Field(default=600, alias="QR_TRAIL_GRACE_SECONDS")
+    qr_max_ttl_seconds: int = Field(default=604800, alias="QR_MAX_TTL_SECONDS")
 
     # Redis
     redis_url: str = Field("redis://127.0.0.1:6379/0", alias="REDIS_URL")
