@@ -46,8 +46,39 @@ async def my_confirmed_trails(claims: dict = Depends(get_claims), db: AsyncSessi
         TrailRead(
             id=t.id, org_id=t.org_id, title=t.title, description=t.description,
             starts_at=t.starts_at, ends_at=t.ends_at, location=t.location,
-            capacity=t.capacity, status=t.status.value
+            capacity=t.capacity, status=t.status.value, created_by=t.created_by
         ) for t in rows
+    ]
+
+@router.get("/me/organiser-trails")
+async def my_organiser_trails(
+    claims: dict = Depends(get_claims),
+    db: AsyncSession = Depends(get_db),
+    limit: int = 20,
+):
+    user_id = uuid.UUID(claims["sub"])
+    rows = (
+        await db.execute(
+            select(Trail)
+            .where(Trail.created_by == user_id)
+            .order_by(Trail.updated_at.desc())
+            .limit(max(1, min(limit, 100)))
+        )
+    ).scalars().all()
+    return [
+        TrailRead(
+            id=t.id,
+            org_id=t.org_id,
+            title=t.title,
+            description=t.description,
+            starts_at=t.starts_at,
+            ends_at=t.ends_at,
+            location=t.location,
+            capacity=t.capacity,
+            status=t.status.value,
+            created_by=t.created_by,
+        )
+        for t in rows
     ]
 
 

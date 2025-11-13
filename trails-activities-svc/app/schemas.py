@@ -37,6 +37,7 @@ class TrailUpdate(BaseModel):
 class TrailRead(BaseModel):
     id: UUID
     org_id: UUID
+    created_by: UUID
     title: str
     description: str | None
     starts_at: datetime
