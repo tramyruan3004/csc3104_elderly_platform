@@ -105,6 +105,7 @@ async def redeem_voucher(voucher_id: uuid.UUID, claims: dict = Depends(get_claim
         redeemed_at=red.redeemed_at,
         voucher_name=v.name,
         voucher_code=v.code,
+        points_cost=v.points_cost,
     )
 
 @router.get("/users/me/redemptions", response_model=list[RedemptionRead])
@@ -130,6 +131,7 @@ async def my_redemptions(claims: dict = Depends(get_claims), db: AsyncSession = 
                 redeemed_at=redemption.redeemed_at,
                 voucher_name=voucher.name,
                 voucher_code=voucher.code,
+                points_cost=voucher.points_cost,
             )
         )
     return results

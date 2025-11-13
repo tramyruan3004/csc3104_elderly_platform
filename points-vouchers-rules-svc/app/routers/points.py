@@ -251,6 +251,7 @@ async def org_recent_redemptions(
                 redeemed_at=redemption.redeemed_at,
                 voucher_name=voucher.name,
                 voucher_code=voucher.code,
+                points_cost=voucher.points_cost,
             )
         )
     return results

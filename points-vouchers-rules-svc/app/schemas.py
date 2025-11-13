@@ -112,6 +112,7 @@ class RedemptionRead(BaseModel):
     redeemed_at: datetime
     voucher_name: str | None = None
     voucher_code: str | None = None
+    points_cost: int | None = None
 
 # --- ingest (from qr-checkin-svc)
 class CheckinIngest(BaseModel):
