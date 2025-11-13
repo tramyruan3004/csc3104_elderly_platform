@@ -481,32 +481,40 @@ async def trails_overview(
 
     now = datetime.now(timezone.utc)
     confirmed_expr = func.count(Registration.id).filter(Registration.status == RegStatus.CONFIRMED)
+    trail_columns = (
+        Trail.id,
+        Trail.title,
+        Trail.starts_at,
+        Trail.ends_at,
+        Trail.capacity,
+    )
     upcoming_rows = (
         await db.execute(
-            select(Trail, confirmed_expr.label("confirmed"))
+            select(*trail_columns, confirmed_expr.label("confirmed"))
             .outerjoin(Registration, Registration.trail_id == Trail.id)
             .where(
                 Trail.org_id == org_id,
                 Trail.status == TrailStatus.PUBLISHED,
                 Trail.starts_at >= now,
             )
-            .group_by(Trail.id)
+            .group_by(*trail_columns)
             .order_by(Trail.starts_at.asc())
             .limit(3)
         )
     ).all()
 
-    upcoming = [
-        UpcomingTrailSummary(
-            id=trail.id,
-            title=trail.title,
-            starts_at=trail.starts_at,
-            ends_at=trail.ends_at,
-            capacity=trail.capacity,
-            confirmed_registrations=int(confirmed or 0),
+    upcoming: list[UpcomingTrailSummary] = []
+    for trail_id, title, starts_at, ends_at, capacity, confirmed in upcoming_rows:
+        upcoming.append(
+            UpcomingTrailSummary(
+                id=trail_id,
+                title=title,
+                starts_at=starts_at,
+                ends_at=ends_at,
+                capacity=capacity,
+                confirmed_registrations=int(confirmed or 0),
+            )
         )
-        for trail, confirmed in upcoming_rows
-    ]
 
     total_trails = sum(status_map.values())
     return TrailsOverview(
