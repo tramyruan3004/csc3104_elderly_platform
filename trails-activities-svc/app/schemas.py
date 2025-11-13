@@ -45,6 +45,8 @@ class TrailRead(BaseModel):
     location: str | None
     capacity: int
     status: Literal["draft", "published", "closed", "cancelled"]
+    created_at: datetime
+    updated_at: datetime
 
 # ---- Registrations ----
 class RegistrationCreateSelf(BaseModel):
@@ -59,8 +61,10 @@ class RegistrationRead(BaseModel):
     trail_id: UUID
     user_id: UUID
     org_id: UUID
-    status: Literal["pending", "approved", "rejected", "cancelled"] | str  # adjust as needed
+    status: Literal["pending", "approved", "confirmed", "rejected", "cancelled", "waitlisted"] | str
     note: str | None = None
+    created_at: datetime
+    updated_at: datetime
 
 
 class UpcomingTrailSummary(BaseModel):

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Response, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, update
@@ -156,6 +157,8 @@ async def list_trails(
             location=t.location,
             capacity=t.capacity,
             status=t.status.value,
+            created_at=t.created_at,
+            updated_at=t.updated_at,
         )
         for t in rows
     ]
@@ -166,9 +169,18 @@ async def get_trail(trail_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     if not t:
         raise HTTPException(status_code=404, detail="Trail not found")
     return TrailRead(
-        id=t.id, org_id=t.org_id, title=t.title, description=t.description,
-        starts_at=t.starts_at, ends_at=t.ends_at, location=t.location,
-        capacity=t.capacity, status=t.status.value, created_by=t.created_by
+        id=t.id,
+        org_id=t.org_id,
+        title=t.title,
+        description=t.description,
+        starts_at=t.starts_at,
+        ends_at=t.ends_at,
+        location=t.location,
+        capacity=t.capacity,
+        status=t.status.value,
+        created_by=t.created_by,
+        created_at=t.created_at,
+        updated_at=t.updated_at,
     )
 
 @router.get("/{trail_id}/attendees")
@@ -177,6 +189,8 @@ async def list_attendees(
     status_filter: RegStatus | None = Query(default=None),
     limit: int | None = Query(default=None, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
+    sort: Literal["created", "updated"] = Query(default="created"),
+    direction: Literal["asc", "desc"] = Query(default="asc"),
     claims: dict = Depends(get_claims),
     db: AsyncSession = Depends(get_db),
 ):
@@ -189,13 +203,25 @@ async def list_attendees(
     total_stmt = select(func.count()).select_from(base_q.subquery())
     total = (await db.execute(total_stmt)).scalar_one()
 
-    query = base_q.order_by(Registration.created_at)
+    column = Registration.created_at if sort == "created" else Registration.updated_at
+    ordering = column.asc() if direction == "asc" else column.desc()
+    query = base_q.order_by(ordering, Registration.created_at.asc(), Registration.id.asc())
     if limit is not None:
         query = query.limit(limit).offset(offset)
     regs = (await db.execute(query)).scalars().all()
 
     items = [
-        {"registration_id": r.id, "user_id": r.user_id, "status": r.status.value, "note": r.note}
+        {
+            "registration_id": r.id,
+            "id": r.id,
+            "trail_id": r.trail_id,
+            "org_id": r.org_id,
+            "user_id": r.user_id,
+            "status": r.status.value,
+            "note": r.note,
+            "created_at": r.created_at,
+            "updated_at": r.updated_at,
+        }
         for r in regs
     ]
     return {

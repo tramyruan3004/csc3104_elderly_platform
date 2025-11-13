@@ -102,6 +102,8 @@ class VoucherRead(BaseModel):
     status: Literal["active", "disabled"]
     total_quantity: int | None
     redeemed_count: int
+    created_at: datetime
+    updated_at: datetime
 
 class RedemptionRead(BaseModel):
     id: UUID

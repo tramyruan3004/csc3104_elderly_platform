@@ -46,10 +46,21 @@ async def list_vouchers(
     if claims.get("role") == "attend_user":
         stmt = stmt.where(Voucher.status == VoucherStatus.ACTIVE)
     rows = (await db.execute(stmt.order_by(Voucher.points_cost.asc(), Voucher.name.asc()))).scalars().all()
-    return [VoucherRead(
-        id=v.id, org_id=v.org_id, code=v.code, name=v.name, points_cost=v.points_cost,
-        status=v.status.value, total_quantity=v.total_quantity, redeemed_count=v.redeemed_count
-    ) for v in rows]
+    return [
+        VoucherRead(
+            id=v.id,
+            org_id=v.org_id,
+            code=v.code,
+            name=v.name,
+            points_cost=v.points_cost,
+            status=v.status.value,
+            total_quantity=v.total_quantity,
+            redeemed_count=v.redeemed_count,
+            created_at=v.created_at,
+            updated_at=v.updated_at,
+        )
+        for v in rows
+    ]
 
 @router.post("/orgs/{org_id}", response_model=VoucherRead, status_code=201)
 async def create_voucher(org_id: uuid.UUID, payload: VoucherCreate, claims: dict = Depends(get_claims), db: AsyncSession = Depends(get_db)):
@@ -57,7 +68,18 @@ async def create_voucher(org_id: uuid.UUID, payload: VoucherCreate, claims: dict
         raise HTTPException(status_code=403, detail="Organiser/Service role with org scope required")
     v = Voucher(org_id=org_id, code=payload.code, name=payload.name, points_cost=payload.points_cost, total_quantity=payload.total_quantity)
     db.add(v); await db.commit(); await db.refresh(v)
-    return VoucherRead(id=v.id, org_id=v.org_id, code=v.code, name=v.name, points_cost=v.points_cost, status=v.status.value, total_quantity=v.total_quantity, redeemed_count=v.redeemed_count)
+    return VoucherRead(
+        id=v.id,
+        org_id=v.org_id,
+        code=v.code,
+        name=v.name,
+        points_cost=v.points_cost,
+        status=v.status.value,
+        total_quantity=v.total_quantity,
+        redeemed_count=v.redeemed_count,
+        created_at=v.created_at,
+        updated_at=v.updated_at,
+    )
 
 @router.patch("/{voucher_id}", response_model=VoucherRead)
 async def update_voucher(voucher_id: uuid.UUID, payload: VoucherUpdate, claims: dict = Depends(get_claims), db: AsyncSession = Depends(get_db)):
@@ -71,7 +93,18 @@ async def update_voucher(voucher_id: uuid.UUID, payload: VoucherUpdate, claims: 
         v.status = VoucherStatus(payload.status)
     if payload.total_quantity is not None: v.total_quantity = payload.total_quantity
     await db.commit(); await db.refresh(v)
-    return VoucherRead(id=v.id, org_id=v.org_id, code=v.code, name=v.name, points_cost=v.points_cost, status=v.status.value, total_quantity=v.total_quantity, redeemed_count=v.redeemed_count)
+    return VoucherRead(
+        id=v.id,
+        org_id=v.org_id,
+        code=v.code,
+        name=v.name,
+        points_cost=v.points_cost,
+        status=v.status.value,
+        total_quantity=v.total_quantity,
+        redeemed_count=v.redeemed_count,
+        created_at=v.created_at,
+        updated_at=v.updated_at,
+    )
 
 @router.post("/{voucher_id}/redeem", response_model=RedemptionRead, status_code=201)
 async def redeem_voucher(voucher_id: uuid.UUID, claims: dict = Depends(get_claims), db: AsyncSession = Depends(get_db)):

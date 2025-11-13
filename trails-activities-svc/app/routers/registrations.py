@@ -27,6 +27,19 @@ async def _count_confirmed(db: AsyncSession, trail_id: uuid.UUID) -> int:
     )
     return (await db.execute(q)).scalar_one()
 
+
+def _registration_to_schema(registration: Registration) -> RegistrationRead:
+    return RegistrationRead(
+        id=registration.id,
+        trail_id=registration.trail_id,
+        user_id=registration.user_id,
+        org_id=registration.org_id,
+        status=registration.status.value,
+        note=registration.note,
+        created_at=registration.created_at,
+        updated_at=registration.updated_at,
+    )
+
 @router.post("/trails/{trail_id}/self", response_model=RegistrationRead, status_code=201)
 async def self_register(
     trail_id: uuid.UUID,
@@ -52,24 +65,14 @@ async def self_register(
             existing.org_id = t.org_id
             await db.commit()
             await db.refresh(existing)
-            return RegistrationRead(
-                id=existing.id,
-                trail_id=existing.trail_id,
-                user_id=existing.user_id,
-                org_id=existing.org_id,
-                status=existing.status.value,
-                note=existing.note,
-            )
+            return _registration_to_schema(existing)
         raise HTTPException(status_code=409, detail="Already registered")
 
     reg = Registration(trail_id=t.id, user_id=user_id, org_id=t.org_id, status=status_val, note=payload.note)
     db.add(reg)
     await db.commit()
     await db.refresh(reg)
-    return RegistrationRead(
-        id=reg.id, trail_id=reg.trail_id, user_id=reg.user_id, org_id=reg.org_id,
-        status=reg.status.value, note=reg.note
-    )
+    return _registration_to_schema(reg)
 
 @router.post("/trails/{trail_id}/by-organiser", response_model=RegistrationRead, status_code=201)
 async def organiser_register(
@@ -98,24 +101,14 @@ async def organiser_register(
             existing.org_id = t.org_id
             await db.commit()
             await db.refresh(existing)
-            return RegistrationRead(
-                id=existing.id,
-                trail_id=existing.trail_id,
-                user_id=existing.user_id,
-                org_id=existing.org_id,
-                status=existing.status.value,
-                note=existing.note,
-            )
+            return _registration_to_schema(existing)
         raise HTTPException(status_code=409, detail="Already registered")
 
     reg = Registration(trail_id=t.id, user_id=payload.user_id, org_id=t.org_id, status=status_val, note=payload.note)
     db.add(reg)
     await db.commit()
     await db.refresh(reg)
-    return RegistrationRead(
-        id=reg.id, trail_id=reg.trail_id, user_id=reg.user_id, org_id=reg.org_id,
-        status=reg.status.value, note=reg.note
-    )
+    return _registration_to_schema(reg)
 
 @router.post("/{registration_id}/approve", response_model=RegistrationRead)
 async def approve_registration(
@@ -133,10 +126,7 @@ async def approve_registration(
         raise HTTPException(status_code=400, detail="Only pending/waitlisted can be approved")
     reg.status = RegStatus.APPROVED
     await db.commit(); await db.refresh(reg)
-    return RegistrationRead(
-        id=reg.id, trail_id=reg.trail_id, user_id=reg.user_id, org_id=reg.org_id,
-        status=reg.status.value, note=reg.note
-    )
+    return _registration_to_schema(reg)
 
 @router.post("/{registration_id}/confirm", response_model=RegistrationRead)
 async def confirm_registration(
@@ -162,10 +152,7 @@ async def confirm_registration(
 
     reg.status = RegStatus.CONFIRMED
     await db.commit(); await db.refresh(reg)
-    return RegistrationRead(
-        id=reg.id, trail_id=reg.trail_id, user_id=reg.user_id, org_id=reg.org_id,
-        status=reg.status.value, note=reg.note
-    )
+    return _registration_to_schema(reg)
 
 @router.post("/{registration_id}/reject", response_model=RegistrationRead)
 async def reject_registration(
@@ -183,10 +170,7 @@ async def reject_registration(
         raise HTTPException(status_code=400, detail="Only pending/approved/waitlisted can be rejected")
     reg.status = RegStatus.REJECTED
     await db.commit(); await db.refresh(reg)
-    return RegistrationRead(
-        id=reg.id, trail_id=reg.trail_id, user_id=reg.user_id, org_id=reg.org_id,
-        status=reg.status.value, note=reg.note
-    )
+    return _registration_to_schema(reg)
 
 @router.post("/{registration_id}/cancel", response_model=RegistrationRead)
 async def organiser_cancel_registration(
@@ -204,10 +188,7 @@ async def organiser_cancel_registration(
         raise HTTPException(status_code=400, detail="Already inactive")
     reg.status = RegStatus.CANCELLED
     await db.commit(); await db.refresh(reg)
-    return RegistrationRead(
-        id=reg.id, trail_id=reg.trail_id, user_id=reg.user_id, org_id=reg.org_id,
-        status=reg.status.value, note=reg.note
-    )
+    return _registration_to_schema(reg)
 
 @router.delete("/{registration_id}", status_code=204)
 async def cancel_own_registration(
