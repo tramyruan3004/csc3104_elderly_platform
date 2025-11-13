@@ -7,6 +7,7 @@ from sqlalchemy import select
 from ..deps import get_db, get_claims
 from ..models import Voucher, VoucherStatus, Redemption, UserPoints, PointsLedger
 from ..schemas import VoucherCreate, VoucherUpdate, VoucherRead, RedemptionRead
+from ..observability import record_voucher_redemption
 
 router = APIRouter(prefix="/vouchers", tags=["vouchers"])
 
@@ -110,17 +111,50 @@ async def update_voucher(voucher_id: uuid.UUID, payload: VoucherUpdate, claims: 
 async def redeem_voucher(voucher_id: uuid.UUID, claims: dict = Depends(get_claims), db: AsyncSession = Depends(get_db)):
     user_id = uuid.UUID(claims["sub"])
     v = (await db.execute(select(Voucher).where(Voucher.id == voucher_id))).scalar_one_or_none()
-    if not v: raise HTTPException(status_code=404, detail="Voucher not found")
+    if not v:
+        record_voucher_redemption(
+            org_id=None,
+            voucher_id=voucher_id,
+            user_id=user_id,
+            points_cost=None,
+            result="not_found",
+            reason="voucher_missing",
+        )
+        raise HTTPException(status_code=404, detail="Voucher not found")
     _ensure_view_scope(claims, v.org_id)
     if v.status != VoucherStatus.ACTIVE:
+        record_voucher_redemption(
+            org_id=v.org_id,
+            voucher_id=v.id,
+            user_id=user_id,
+            points_cost=v.points_cost,
+            result="inactive",
+            reason="voucher_inactive",
+        )
         raise HTTPException(status_code=400, detail="Voucher not active")
     if v.total_quantity is not None and v.redeemed_count >= v.total_quantity:
+        record_voucher_redemption(
+            org_id=v.org_id,
+            voucher_id=v.id,
+            user_id=user_id,
+            points_cost=v.points_cost,
+            result="exhausted",
+            reason="voucher_exhausted",
+        )
         raise HTTPException(status_code=409, detail="Voucher exhausted")
 
     up = None
     if v.points_cost > 0:
         up = (await db.execute(select(UserPoints).where(UserPoints.user_id == user_id, UserPoints.org_id == v.org_id))).scalar_one_or_none()
         if not up or up.balance < v.points_cost:
+            record_voucher_redemption(
+                org_id=v.org_id,
+                voucher_id=v.id,
+                user_id=user_id,
+                points_cost=v.points_cost,
+                result="insufficient_points",
+                reason="insufficient_balance",
+            )
             raise HTTPException(status_code=400, detail="Insufficient points")
         up.balance -= v.points_cost
     red = Redemption(voucher_id=v.id, user_id=user_id, org_id=v.org_id)
@@ -129,6 +163,13 @@ async def redeem_voucher(voucher_id: uuid.UUID, claims: dict = Depends(get_claim
     if v.points_cost > 0:
         db.add(PointsLedger(user_id=user_id, org_id=v.org_id, delta=-v.points_cost, reason="voucher_redeem", details=f"voucher:{v.code}"))
     await db.commit(); await db.refresh(v); await db.refresh(red)
+    record_voucher_redemption(
+        org_id=v.org_id,
+        voucher_id=v.id,
+        user_id=user_id,
+        points_cost=v.points_cost,
+        result="success",
+    )
     return RedemptionRead(
         id=red.id,
         voucher_id=red.voucher_id,

@@ -28,6 +28,16 @@ async def _count_confirmed(db: AsyncSession, trail_id: uuid.UUID) -> int:
     return (await db.execute(q)).scalar_one()
 
 
+def _has_capacity_available(trail: Trail, confirmed_count: int) -> bool:
+    if trail.capacity is None:
+        return True
+    return confirmed_count < trail.capacity
+
+
+def _next_status(trail: Trail, confirmed_count: int) -> RegStatus:
+    return RegStatus.PENDING if _has_capacity_available(trail, confirmed_count) else RegStatus.WAITLISTED
+
+
 def _registration_to_schema(registration: Registration) -> RegistrationRead:
     return RegistrationRead(
         id=registration.id,
@@ -53,7 +63,7 @@ async def self_register(
 
     user_id = uuid.UUID(claims["sub"])
     confirmed_count = await _count_confirmed(db, t.id)
-    status_val = RegStatus.PENDING if confirmed_count < t.capacity else RegStatus.WAITLISTED
+    status_val = _next_status(t, confirmed_count)
 
     existing = (await db.execute(select(Registration).where(
         Registration.trail_id == t.id, Registration.user_id == user_id
@@ -89,7 +99,7 @@ async def organiser_register(
         raise HTTPException(status_code=400, detail="Trail is not accepting registrations")
 
     confirmed_count = await _count_confirmed(db, t.id)
-    status_val = RegStatus.PENDING if confirmed_count < t.capacity else RegStatus.WAITLISTED
+    status_val = _next_status(t, confirmed_count)
 
     existing = (await db.execute(select(Registration).where(
         Registration.trail_id == t.id, Registration.user_id == payload.user_id
@@ -147,7 +157,7 @@ async def confirm_registration(
         raise HTTPException(status_code=400, detail="Only approved/pending can be confirmed")
 
     confirmed_count = await _count_confirmed(db, t.id)
-    if confirmed_count >= t.capacity:
+    if t.capacity is not None and confirmed_count >= t.capacity:
         raise HTTPException(status_code=409, detail="Trail capacity full")
 
     reg.status = RegStatus.CONFIRMED

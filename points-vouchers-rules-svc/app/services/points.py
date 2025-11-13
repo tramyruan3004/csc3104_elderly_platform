@@ -5,6 +5,7 @@ from sqlalchemy import select, func
 
 from ..core.config import get_settings
 from ..models import UserPoints, PointsLedger, Rule, RuleType
+from ..observability import record_checkin_award, record_manual_adjustment
 
 settings = get_settings()
 
@@ -42,7 +43,17 @@ async def award_checkin_points(
     activity_order: int | None = None,
 ) -> int:
     pts = points_override if points_override is not None else await _get_rule_points(db, org_id, RuleType.CHECKIN)
+    source = "activity" if activity_id else "trail"
     if pts <= 0:
+        record_checkin_award(
+            org_id=org_id,
+            user_id=user_id,
+            trail_id=trail_id,
+            points=0,
+            source=source,
+            result="skipped_no_points",
+            activity_id=activity_id,
+        )
         return 0
     bal = await _get_or_create_balance(db, user_id, org_id)
     reason = "activity_checkin" if activity_id else "checkin"
@@ -69,6 +80,15 @@ async def award_checkin_points(
             )
         ).scalar_one_or_none()
         if existing:
+            record_checkin_award(
+                org_id=org_id,
+                user_id=user_id,
+                trail_id=trail_id,
+                points=0,
+                source=source,
+                result="duplicate_activity",
+                activity_id=activity_id,
+            )
             return 0
 
     bal.balance += pts
@@ -83,14 +103,39 @@ async def award_checkin_points(
         )
     )
     await db.commit()
+    record_checkin_award(
+        org_id=org_id,
+        user_id=user_id,
+        trail_id=trail_id,
+        points=pts,
+        source=source,
+        result="success",
+        activity_id=activity_id,
+    )
     return pts
 
 async def adjust_points(db: AsyncSession, *, user_id: uuid.UUID, org_id: uuid.UUID, delta: int, reason: str, details: str | None = None) -> int:
     bal = await _get_or_create_balance(db, user_id, org_id)
     new_bal = bal.balance + delta
     if new_bal < 0:
+        record_manual_adjustment(
+            org_id=org_id,
+            user_id=user_id,
+            delta=delta,
+            reason=reason,
+            result="failed_insufficient",
+            balance=bal.balance,
+        )
         raise ValueError("insufficient points")
     bal.balance = new_bal
     db.add(PointsLedger(user_id=user_id, org_id=org_id, delta=delta, reason=reason, details=details))
     await db.commit()
+    record_manual_adjustment(
+        org_id=org_id,
+        user_id=user_id,
+        delta=delta,
+        reason=reason,
+        result="success",
+        balance=new_bal,
+    )
     return bal.balance

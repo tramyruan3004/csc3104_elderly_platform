@@ -20,6 +20,7 @@ from ..services.checkins import record_checkin, record_activity_checkin
 from ..core.redis import reserve_qr_token, release_qr_token, allow_request
 from ..core.nats import publish_checkin
 from ..core.config import get_settings
+from ..observability import record_qr_token_issued, record_checkin_scan
 
 settings = get_settings()
 router = APIRouter(prefix="/checkin", tags=["checkin"])
@@ -95,6 +96,7 @@ async def create_qr_for_trail(
         ttl_seconds=ttl_seconds,
     )
     url = f"/checkin/scan?{urlencode({'token': token})}"
+    record_qr_token_issued(org_id=org_id, trail_id=trail_id, kind="trail", expires_at=exp)
     return QRCreateResponse(token=token, expires_at=exp, url=url)
 
 
@@ -142,6 +144,13 @@ async def create_qr_for_activity(
     if points is not None:
         query["p"] = str(points)
     url = f"/checkin/scan?{urlencode(query)}"
+    record_qr_token_issued(
+        org_id=org_id,
+        trail_id=trail_id,
+        kind="activity",
+        expires_at=exp,
+        activity_id=activity_id,
+    )
     return QRCreateResponse(
         token=token,
         expires_at=exp,
@@ -202,20 +211,42 @@ async def scan_and_checkin(
     db: AsyncSession = Depends(get_db),
     authorization: str | None = Header(default=None),
 ):
+    user_id = uuid.UUID(claims["sub"])
+    org_uuid: uuid.UUID | None = None
+    trail_uuid: uuid.UUID | None = None
+    activity_uuid: uuid.UUID | None = None
+    outcome_logged = False
+
+    def log_outcome(result: str, *, reason: str | None = None) -> None:
+        nonlocal outcome_logged
+        record_checkin_scan(
+            org_id=org_uuid,
+            trail_id=trail_uuid,
+            user_id=user_id,
+            activity_id=activity_uuid,
+            result=result,
+            reason=reason,
+        )
+        outcome_logged = True
+
     # basic rate-limit per IP on scan
     ip = request.client.host if request.client else "unknown"
     if not await allow_request(ip, "checkin.scan"):
+        log_outcome("rate_limited", reason="ip_limit")
         raise HTTPException(status_code=429, detail="Too many requests")
 
     # a) verify QR token
     try:
         qr = verify_qr(payload.token)
     except Exception:
+        log_outcome("invalid_qr", reason="token_invalid")
         raise HTTPException(status_code=400, detail="Invalid or expired QR")
 
     trail_id = uuid.UUID(qr["trail_id"])
     org_id = uuid.UUID(qr["org_id"])
-    attendee_id = uuid.UUID(claims["sub"])
+    attendee_id = user_id
+    trail_uuid = trail_id
+    org_uuid = org_id
 
     token_activity_uuid_raw = qr.get("activity_id")
     token_activity_uuid: uuid.UUID | None = None
@@ -261,8 +292,10 @@ async def scan_and_checkin(
 
     claim_orgs = {str(x) for x in claims.get("org_ids", []) if x}
     if not claim_orgs:
+        log_outcome("forbidden", reason="no_org_membership")
         raise HTTPException(status_code=403, detail="Join an organisation before scanning activities")
     if str(org_id) not in claim_orgs:
+        log_outcome("forbidden", reason="org_mismatch")
         raise HTTPException(status_code=403, detail="You are not a member of this organisation")
 
     # b) replay guard on QR JTI (Redis)
@@ -275,6 +308,7 @@ async def scan_and_checkin(
     if not jti:
         raise HTTPException(status_code=400, detail="QR token missing identifier")
     if not await reserve_qr_token(jti, ttl):
+        log_outcome("replay", reason="token_reuse")
         raise HTTPException(status_code=409, detail="QR already used")
     checkin_created = False
     activity_created = False
@@ -283,6 +317,7 @@ async def scan_and_checkin(
     # c) eligibility: must be confirmed in trails-activities-svc
     if not authorization or not authorization.lower().startswith("bearer "):
         await release_qr_token(jti)
+        log_outcome("missing_authorization", reason="token_header_required")
         raise HTTPException(status_code=401, detail="Missing token header")
     raw_token = authorization.split(" ", 1)[1].strip()
 
@@ -291,6 +326,7 @@ async def scan_and_checkin(
             token=raw_token, trail_id=str(trail_id), user_id=str(attendee_id)
         )
         if status_txt != "confirmed":
+            log_outcome("not_confirmed", reason=status_txt or "unconfirmed")
             raise HTTPException(status_code=403, detail="Not confirmed for this trail")
 
         # d) write check-in (DB idempotency guarantees one per user+trail)
@@ -315,13 +351,18 @@ async def scan_and_checkin(
                 points_awarded=points_value,
             )
             activity_order = activity_obj.activity_order
-    except HTTPException:
+    except HTTPException as exc:
         if not checkin_created and not activity_created:
             await release_qr_token(jti)
+        if not outcome_logged:
+            detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+            log_outcome("http_error", reason=detail)
         raise
-    except Exception:
+    except Exception as exc:
         if not checkin_created and not activity_created:
             await release_qr_token(jti)
+        if not outcome_logged:
+            log_outcome("error", reason=str(exc))
         raise
 
     # e) Emit event on NATS (idempotency key helps consumers)
@@ -369,6 +410,12 @@ async def scan_and_checkin(
             )
         except Exception:
             pass
+
+    if not outcome_logged:
+        outcome_reason = "new_attendance" if checkin_created else "repeat"
+        if activity_uuid and activity_created:
+            outcome_reason = "activity"
+        log_outcome("success", reason=outcome_reason)
 
     return CheckinRead(
         id=obj.id,

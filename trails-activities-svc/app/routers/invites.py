@@ -9,6 +9,7 @@ from ..core.config import get_settings
 from ..core.invite import sign_invite, verify_invite
 from ..models import Trail, TrailStatus, Registration, RegStatus
 from ..schemas import RegistrationRead
+from .registrations import _registration_to_schema
 
 router = APIRouter(prefix="/invites", tags=["invites"])
 settings = get_settings()
@@ -27,6 +28,12 @@ async def _count_confirmed(db: AsyncSession, trail_id: uuid.UUID) -> int:
         Registration.trail_id == trail_id, Registration.status == RegStatus.CONFIRMED
     )
     return (await db.execute(q)).scalar_one()
+
+
+def _next_status(trail: Trail, confirmed_count: int) -> RegStatus:
+    if trail.capacity is None:
+        return RegStatus.PENDING
+    return RegStatus.PENDING if confirmed_count < trail.capacity else RegStatus.WAITLISTED
 
 # --- 1) Organiser creates an invitation link for a trail
 @router.post("/trails/{trail_id}", status_code=201)
@@ -107,7 +114,7 @@ async def accept_invite(
         raise HTTPException(status_code=409, detail="Already registered")
 
     confirmed_count = await _count_confirmed(db, t.id)
-    status_val = RegStatus.PENDING if confirmed_count < t.capacity else RegStatus.WAITLISTED
+    status_val = _next_status(t, confirmed_count)
 
     reg = Registration(
         trail_id=t.id,
@@ -119,7 +126,4 @@ async def accept_invite(
     db.add(reg)
     await db.commit()
     await db.refresh(reg)
-    return RegistrationRead(
-        id=reg.id, trail_id=reg.trail_id, user_id=reg.user_id, org_id=reg.org_id,
-        status=reg.status.value, note=reg.note
-    )
+    return _registration_to_schema(reg)

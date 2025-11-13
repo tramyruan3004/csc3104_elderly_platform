@@ -1,5 +1,8 @@
 # Change Log
 
+- Added shared observability helpers so voucher redemptions, manual point adjustments, check-in awards, and QR token/scan events emit structured audit logs plus Prometheus counters (`points-vouchers-rules-svc/app/observability.py`, `app/services/points.py`, `app/routers/vouchers.py`, `qr-checkin-svc/app/observability.py`, `app/routers/checkins.py`).
+- Trail registration flows now handle unlimited-capacity events cleanly and every registration/trail response includes the required timestamp metadata, fixing invite acceptance and the senior trails tabs (`trails-activities-svc/app/routers/registrations.py`, `app/routers/invites.py`, `app/routers/users.py`).
+
 - QR scan API now prioritises the activity metadata embedded in the signed token, ignoring mismatched client payloads so per-activity QR codes always record the intended activity (`qr-checkin-svc/app/routers/checkins.py`).
 - QR token lifespan now stretches to the trail's end time (with a configurable grace window and max cap) so organisers can mint a code once per event instead of refreshing mid-session (`qr-checkin-svc/app/routers/checkins.py`, `app/deps.py`, `app/core/config.py`).
 - Added CORS middleware to all FastAPI services to allow local frontends on ports 5173 and 3000.
