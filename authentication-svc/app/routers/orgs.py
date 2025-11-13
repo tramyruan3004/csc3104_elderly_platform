@@ -96,16 +96,27 @@ async def self_join_org(
 @router.get("/{org_id}/stats", response_model=OrganizationStats)
 async def org_stats(
     org_id: uuid.UUID,
-    actor: User = Depends(require_organiser),
+    actor: User = Depends(require_active_user),
     db: AsyncSession = Depends(get_db),
 ):
+    if actor.role not in (UserRole.ORGANISER, UserRole.ADMIN, UserRole.SERVICE):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to view organisation stats")
+
     membership = (
         await db.execute(
             select(OrgMember).where(OrgMember.org_id == org_id, OrgMember.user_id == actor.id)
         )
     ).scalar_one_or_none()
-    if not membership:
+
+    if actor.role == UserRole.ORGANISER and not membership:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this organisation")
+
+    if actor.role == UserRole.SERVICE and not membership:
+        scoped_org_ids = (
+            await db.execute(select(OrgMember.org_id).where(OrgMember.user_id == actor.id))
+        ).scalars().all()
+        if scoped_org_ids and org_id not in scoped_org_ids:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Service token not scoped for this organisation")
 
     organiser_count = (
         await db.execute(
