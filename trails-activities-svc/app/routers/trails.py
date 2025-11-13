@@ -148,6 +148,7 @@ async def list_trails(
         TrailRead(
             id=t.id,
             org_id=t.org_id,
+            created_by=t.created_by,
             title=t.title,
             description=t.description,
             starts_at=t.starts_at,
@@ -167,7 +168,7 @@ async def get_trail(trail_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     return TrailRead(
         id=t.id, org_id=t.org_id, title=t.title, description=t.description,
         starts_at=t.starts_at, ends_at=t.ends_at, location=t.location,
-        capacity=t.capacity, status=t.status.value
+        capacity=t.capacity, status=t.status.value, created_by=t.created_by
     )
 
 @router.get("/{trail_id}/attendees")
@@ -228,9 +229,16 @@ async def create_trail(
     await db.commit()
     await db.refresh(t)
     return TrailRead(
-        id=t.id, org_id=t.org_id, title=t.title, description=t.description,
-        starts_at=t.starts_at, ends_at=t.ends_at, location=t.location,
-        capacity=t.capacity, status=t.status.value
+        id=t.id,
+        org_id=t.org_id,
+        created_by=t.created_by,
+        title=t.title,
+        description=t.description,
+        starts_at=t.starts_at,
+        ends_at=t.ends_at,
+        location=t.location,
+        capacity=t.capacity,
+        status=t.status.value,
     )
 
 @router.patch("/{trail_id}", response_model=TrailRead)
@@ -265,9 +273,16 @@ async def update_trail(
     await db.commit()
     await db.refresh(t)
     return TrailRead(
-        id=t.id, org_id=t.org_id, title=t.title, description=t.description,
-        starts_at=t.starts_at, ends_at=t.ends_at, location=t.location,
-        capacity=t.capacity, status=t.status.value
+        id=t.id,
+        org_id=t.org_id,
+        created_by=t.created_by,
+        title=t.title,
+        description=t.description,
+        starts_at=t.starts_at,
+        ends_at=t.ends_at,
+        location=t.location,
+        capacity=t.capacity,
+        status=t.status.value,
     )
 
 
