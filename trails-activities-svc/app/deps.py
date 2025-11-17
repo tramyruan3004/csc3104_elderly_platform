@@ -32,7 +32,6 @@ async def fetch_jwks() -> Dict[str, Any]:
 async def get_signing_key():
     from jwt.algorithms import RSAAlgorithm
     jwks = await fetch_jwks()
-    # If multiple keys, you can pick by 'kid'; here we take the first
     key = jwks["keys"][0]
     return RSAAlgorithm.from_jwk(key)
 
@@ -45,10 +44,8 @@ async def get_claims(authorization: str | None = Header(default=None)) -> Dict[s
         payload = jwt.decode(token, key=key, algorithms=["RS256"], options={"verify_aud": False})
     except Exception:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
-    # basic shape check
     if "sub" not in payload or "role" not in payload:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
-    # normalize org_ids
     if "org_ids" not in payload or not isinstance(payload["org_ids"], list):
         payload["org_ids"] = []
     return payload

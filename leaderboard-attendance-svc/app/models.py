@@ -26,12 +26,11 @@ class Attendance(Base):
     __table_args__ = (UniqueConstraint("trail_id", "user_id", name="uq_attendance_trail_user"),)
 
 # Monthly per-user stats (both per-org and system-wide)
-# We store two rows per checkin: one with real org_id, one with system row marked by org_id = NULL
 class UserMonthlyStats(Base):
     __tablename__ = "user_monthly_stats"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    ym: Mapped[int] = mapped_column(Integer, index=True, nullable=False)  # YYYYMM
-    org_id: Mapped[uuid.UUID | None] = mapped_column(index=True, nullable=True)  # None => system-wide
+    ym: Mapped[int] = mapped_column(Integer, index=True, nullable=False) 
+    org_id: Mapped[uuid.UUID | None] = mapped_column(index=True, nullable=True)
     user_id: Mapped[uuid.UUID] = mapped_column(index=True, nullable=False)
     # metrics
     checkins: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -42,7 +41,7 @@ class UserMonthlyStats(Base):
         Index("ix_stats_scope", "ym", "org_id", "checkins"),
     )
 
-# Materialised rank tables (fast read)
+# Materialised rank tables 
 class OrgMonthlyRank(Base):
     __tablename__ = "org_monthly_rank"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
@@ -51,7 +50,6 @@ class OrgMonthlyRank(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(index=True, nullable=False)
     rank: Mapped[int] = mapped_column(Integer, nullable=False)
     score: Mapped[int] = mapped_column(Integer, nullable=False)  # checkins (for now)
-    # simple rebuild cadence
     rebuilt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     __table_args__ = (UniqueConstraint("ym", "org_id", "user_id", name="uq_org_rank_row"),)

@@ -29,7 +29,7 @@ async def lifespan(app: FastAPI):
                     org_id = uuid.UUID(evt["org_id"])
                     user_id = uuid.UUID(evt["user_id"])
                 except Exception:
-                    return  # malformed payload
+                    return 
 
                 activity_id = None
                 activity_order = None
@@ -77,7 +77,6 @@ async def lifespan(app: FastAPI):
 
             await subscribe_checkins(handle_checkin)
         except Exception:
-            # You can log the error; service still runs without NATS
             pass
 
     yield

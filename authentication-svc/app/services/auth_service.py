@@ -157,7 +157,6 @@ async def refresh(db: AsyncSession, *, user_id: UUID, presented_refresh: str) ->
     if not rt or rt.expires_at <= datetime.now(timezone.utc):
         raise PermissionError("Invalid refresh")
 
-    # rotate: revoke old, create new
     rt.revoked = True
 
     org_ids = await _get_org_ids_for_user(db, user_id)

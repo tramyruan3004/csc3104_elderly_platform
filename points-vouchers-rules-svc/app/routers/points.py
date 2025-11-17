@@ -309,7 +309,6 @@ async def ingest_checkin(payload: CheckinIngest, claims: dict = Depends(get_clai
         if str(payload.org_id) not in [str(x) for x in claims.get("org_ids", [])]:
             raise HTTPException(status_code=403, detail="Organiser not in org")
     elif role == "service":
-        # Optional: enforce service scoping to org
         pass
     else:
         raise HTTPException(status_code=403, detail="Service or organiser required")
@@ -326,7 +325,6 @@ async def ingest_checkin(payload: CheckinIngest, claims: dict = Depends(get_clai
     )
     return {"awarded": pts}
 
-# Manual adjust (organiser only)
 @router.post("/orgs/{org_id}/adjust")
 async def adjust_points_admin(
     org_id: uuid.UUID,

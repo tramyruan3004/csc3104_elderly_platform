@@ -19,13 +19,12 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         try:
             yield session
         finally:
-            # ensure any pending transaction is rolled back before returning the session
             if session.in_transaction():
                 await session.rollback()
 
 
 async def get_current_user(
-    authorization: str | None = Header(default=None),   # ⬅ read HTTP header
+    authorization: str | None = Header(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> User:
     if not authorization or not authorization.lower().startswith("bearer "):

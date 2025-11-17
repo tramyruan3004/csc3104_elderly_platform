@@ -7,7 +7,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 
 from .db import init_db
 from .routers import auth, users
-from .routers import orgs  # NEW
+from .routers import orgs 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -32,7 +32,7 @@ app.add_middleware(
 # routers
 app.include_router(auth.router)
 app.include_router(users.router)
-app.include_router(orgs.router)  # NEW
+app.include_router(orgs.router) 
 
 @app.get("/health")
 async def health():

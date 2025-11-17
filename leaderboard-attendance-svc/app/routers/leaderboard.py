@@ -21,7 +21,6 @@ def _allow_actor_for_org(claims: dict, org_id: UUID) -> bool:
     org_ids = [str(x) for x in claims.get("org_ids", [])]
 
     if role == "service":
-        # services may omit org_ids (global) or include explicit scopes
         return (not org_ids) or (str(org_id) in org_ids)
 
     if role in {"organiser", "admin", "attend_user"}:

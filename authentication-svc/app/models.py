@@ -36,7 +36,6 @@ class User(Base):
         onupdate=lambda: datetime.now(timezone.utc),
     )
 
-    # relationships
     credentials: Mapped["Credential"] = relationship(
         "Credential", back_populates="user", uselist=False, cascade="all, delete-orphan"
     )

@@ -1,4 +1,3 @@
-# app/routers/trails.py  (REPLACE FILE)
 from __future__ import annotations
 
 import uuid

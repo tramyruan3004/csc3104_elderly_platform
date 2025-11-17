@@ -18,7 +18,6 @@ class Settings(BaseSettings):
         env_prefix = ""
         case_sensitive = False
 
-    # ephemeral fallback if no INVITE_SECRET provided
     @property
     def invite_secret_effective(self) -> str:
         if self.invite_secret:

@@ -65,14 +65,11 @@ async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
         tokens=TokenPair(access_token=access, refresh_token=refresh, expires_in=expires_in),
     )
 
-
 class RefreshRequest(LoginRequest):
-    pass  # we use 'refresh_token' only, leaving struct here if needed
-
+    pass  
 
 class RefreshBody(BaseModel):
     refresh_token: str
-
 
 @router.post("/refresh", response_model=TokenPair)
 async def refresh(body: RefreshBody, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
@@ -91,15 +88,12 @@ async def logout(body: RefreshBody, user: User = Depends(get_current_user), db: 
 
 @router.get("/jwks")
 async def jwks():
-    # keep shape compatible with JWKS consumers
     return {"keys": [build_rsa_jwk()], "alg": "RS256"}
 
 class ServiceTokenRequest(BaseModel):
     client_id: str
     client_secret: str
-    # Optional: scope the service token to certain orgs
     org_ids: list[uuid.UUID] = []
-    # Optional: shorter expiry (minutes); default uses your service’s default
     expires_minutes: int | None = None
 
 @router.post("/service-token")
@@ -110,15 +104,13 @@ async def mint_service_token(payload: ServiceTokenRequest):
     if not (payload.client_id == settings.service_client_id and payload.client_secret == settings.service_client_secret):
         raise HTTPException(status_code=401, detail="Invalid client credentials")
 
-    # "sub" for a service token can be a random stable UUID per client_id.
-    # If you want determinism, derive a UUID5 from client_id.
     service_sub = uuid.uuid5(uuid.NAMESPACE_DNS, f"service:{payload.client_id}")
 
     access = create_access_token(
         user_id=service_sub,
         role="service",
-        org_ids=payload.org_ids,                 # scope to certain orgs, or leave []
-        expires_minutes=payload.expires_minutes  # optional
+        org_ids=payload.org_ids,                 
+        expires_minutes=payload.expires_minutes  
     )
     return {
         "access_token": access,

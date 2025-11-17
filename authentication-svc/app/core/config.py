@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     refresh_token_exp_minutes: int = 60 * 24 * 7  # 7 days
     token_issuer: str = "authentication-svc"
 
-    # JWT (either supply paths OR inline PEM strings; if neither is supplied, we auto-generate)
+    # JWT
     jwt_private_key_path: Optional[str] = Field(default=None)
     jwt_public_key_path: Optional[str] = Field(default=None)
     jwt_private_key_inline: Optional[str] = Field(default=None, alias="JWT_PRIVATE_KEY")
@@ -54,7 +54,7 @@ class Settings(BaseSettings):
                                       inline=self.jwt_public_key_inline)
         if pem:
             return pem
-        # otherwise derive from the private key we generated/loaded
+        # otherwise derive from the private key generated/loaded
         from cryptography.hazmat.primitives import serialization
         from cryptography.hazmat.primitives.serialization import load_pem_private_key
         private_key = load_pem_private_key(self.jwt_private_key.encode("utf-8"), password=None)

@@ -6,7 +6,7 @@ from datetime import datetime
 class QRCreateResponse(BaseModel):
     token: str
     expires_at: int
-    url: str  # convenient URL you can turn into QR (frontends just encode this)
+    url: str  
     activity_id: UUID | None = None
     activity_order: int | None = Field(default=None, ge=1)
     points: int | None = Field(default=None, ge=0)

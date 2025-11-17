@@ -42,7 +42,6 @@ async def release_qr_token(jti: str) -> None:
     except Exception:
         pass
 
-# ---- Simple fixed-window rate limit per IP/route ----
 async def allow_request(ip: str, route_key: str) -> bool:
     """
     Fixed window: increment a counter key; allow if <= max.
@@ -51,7 +50,6 @@ async def allow_request(ip: str, route_key: str) -> bool:
         return True
     r = get_redis()
     key = f"rl:{route_key}:{ip}"
-    # INCR, set expire on first increment in a window
     pipe = r.pipeline()
     pipe.incr(key)
     pipe.expire(key, _settings.rl_window_seconds)

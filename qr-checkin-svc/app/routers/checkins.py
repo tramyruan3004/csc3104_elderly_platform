@@ -194,7 +194,6 @@ async def create_qr_png(
     try:
         img.save(b, format="PNG")
     except TypeError:
-        # Handle backends like PyPNG that do not accept the format argument
         try:
             pil_img = img.get_image()
             pil_img.save(b, format="PNG")
@@ -383,7 +382,6 @@ async def scan_and_checkin(
     try:
         await publish_checkin(event_payload)
     except Exception:
-        # non-fatal for the check-in HTTP response
         pass
 
     # f) Award points: NATS-only or HTTP fallback

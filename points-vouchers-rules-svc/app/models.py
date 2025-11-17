@@ -24,7 +24,7 @@ class VoucherStatus(str, Enum):
     DISABLED = "disabled"
 
 class RedemptionStatus(str, Enum):
-    RESERVED = "reserved"   # optional stage
+    RESERVED = "reserved"   
     REDEEMED = "redeemed"
     CANCELLED = "cancelled"
 
@@ -47,8 +47,8 @@ class PointsLedger(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
     org_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
-    delta: Mapped[int] = mapped_column(Integer, nullable=False)  # + or -
-    reason: Mapped[str] = mapped_column(String(64), nullable=False)  # e.g., "checkin", "voucher_redeem", "manual"
+    delta: Mapped[int] = mapped_column(Integer, nullable=False)  
+    reason: Mapped[str] = mapped_column(String(64), nullable=False)  
     trail_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
     details: Mapped[str | None] = mapped_column(Text)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

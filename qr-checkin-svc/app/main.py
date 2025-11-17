@@ -12,7 +12,6 @@ from .core.nats import nats_connect, nats_close
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
-    # best-effort connect to infra; service still runs if these fail
     try:
         await nats_connect()
     except Exception:

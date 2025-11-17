@@ -16,7 +16,6 @@ class Settings(BaseSettings):
     enable_nats_consumer: bool = Field(default=True, alias="ENABLE_NATS_CONSUMER")
 
     # Leaderboard logic
-    # scoring can be "checkins" (count) for now; you can extend to "points" later
     scoring_mode: str = Field("checkins", alias="SCORING_MODE")
 
     # cron-like rebuild cadence for ranks (seconds)

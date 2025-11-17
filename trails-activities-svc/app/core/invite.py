@@ -42,7 +42,7 @@ def verify_invite(token: str) -> Dict[str, Any]:
         raise jwt.InvalidIssuerError("invalid issuer")
     if payload.get("scope") != "register":
         raise jwt.InvalidTokenError("invalid scope")
-    # basic shape checks
+
     for k in ("trail_id", "org_id", "inviter_id"):
         if k not in payload:
             raise jwt.InvalidTokenError("missing claim: " + k)

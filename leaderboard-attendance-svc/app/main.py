@@ -24,7 +24,6 @@ def current_ym() -> int:
 async def lifespan(app: FastAPI):
     await init_db()
 
-    # NATS consumer: checkins.recorded -> ingest + increment aggregates
     if settings.enable_nats_consumer:
         try:
             await nats_connect()

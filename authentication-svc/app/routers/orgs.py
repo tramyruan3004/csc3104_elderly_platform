@@ -12,7 +12,7 @@ from ..schemas import OrganizationCreate, OrganizationRead, AddMemberRequest, Or
 router = APIRouter(prefix="/orgs", tags=["organizations"])
 
 
-# Provide a simple list endpoint so organisers can see available organisations.
+# List endpoint so organisers can see available organisations.
 @router.get("", response_model=list[OrganizationRead])
 async def list_orgs(user: User = Depends(require_active_user), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Organization).order_by(Organization.name))
@@ -35,11 +35,6 @@ async def create_org(payload: OrganizationCreate, actor: User = Depends(require_
 
 @router.post("/{org_id}/members", status_code=204)
 async def add_member(org_id: uuid.UUID, body: AddMemberRequest, actor: User = Depends(require_organiser), db: AsyncSession = Depends(get_db)):
-    # (optional) require actor to be a member of the org they modify — enable if needed:
-    # is_member = (await db.execute(select(OrgMember).where(OrgMember.org_id == org_id, OrgMember.user_id == actor.id))).scalar_one_or_none()
-    # if not is_member:
-    #     raise HTTPException(status_code=403, detail="Not a member of this org")
-
     org = (await db.execute(select(Organization).where(Organization.id == org_id))).scalar_one_or_none()
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
@@ -55,12 +50,11 @@ async def add_member(org_id: uuid.UUID, body: AddMemberRequest, actor: User = De
     if target.role not in (UserRole.ORGANISER, UserRole.ATTEND_USER):
         raise HTTPException(status_code=400, detail="User role is not eligible for organisation membership")
 
-    # upsert-ish: respect uniqueness
     existing = (await db.execute(
         select(OrgMember).where(OrgMember.org_id == org_id, OrgMember.user_id == target.id)
     )).scalar_one_or_none()
     if existing:
-        return  # 204
+        return  
 
     db.add(OrgMember(org_id=org_id, user_id=target.id, role_in_org=target.role))
     await db.commit()

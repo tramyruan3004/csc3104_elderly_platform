@@ -10,7 +10,6 @@ from ..observability import record_checkin_award, record_manual_adjustment
 settings = get_settings()
 
 async def _get_rule_points(db: AsyncSession, org_id: uuid.UUID, rtype: RuleType) -> int:
-    # prefer an active rule; otherwise default
     row = (await db.execute(
         select(Rule).where(Rule.org_id == org_id, Rule.type == rtype, Rule.active == True)
         .order_by(Rule.updated_at.desc())

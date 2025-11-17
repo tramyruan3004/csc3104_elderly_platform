@@ -144,4 +144,4 @@ async def points_award_checkin(
         try:
             await client.post(url, headers=headers, json=payload, timeout=5.0)
         except Exception:
-            pass  # non-blocking for check-in path
+            pass 

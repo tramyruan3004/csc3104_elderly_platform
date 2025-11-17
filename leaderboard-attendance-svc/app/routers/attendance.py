@@ -16,7 +16,7 @@ def _allow_actor_for_org(claims: dict, org_id: uuid.UUID) -> bool:
     in_scope = (not org_ids) or (str(org_id) in org_ids)  # empty means global service
     return (role == "organiser" and str(org_id) in org_ids) or (role == "service" and in_scope)
 
-# Organiser view: list all check-ins for a trail (or whole org by period via query later)
+# Organiser view: list all check-ins for a trail
 @router.get("/trails/{trail_id}", response_model=list[AttendanceRow])
 async def trail_roster(
     trail_id: uuid.UUID,

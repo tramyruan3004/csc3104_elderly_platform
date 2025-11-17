@@ -27,7 +27,6 @@ async def acquire_service_token(org_ids: Sequence[str] | None = None) -> str | N
         return _service_token_value
 
     async with _service_token_lock:
-        # Another coroutine may have refreshed while we awaited the lock.
         if _service_token_value and time.time() < _service_token_exp - 15:
             return _service_token_value
 

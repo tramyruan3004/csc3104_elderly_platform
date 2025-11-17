@@ -37,6 +37,5 @@ async def subscribe_checkins(cb: Callable[[dict], Awaitable[None]]):
             data = json.loads(msg.data)
             await cb(data)
         except Exception:
-            # swallow to avoid breaking subscription; add logging if you want
             pass
     await _nats.subscribe(_settings.nats_subject_checkin, cb=_handler)

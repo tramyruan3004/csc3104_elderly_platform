@@ -19,7 +19,7 @@ def build_rsa_jwk() -> dict:
         "kty": "RSA",
         "alg": "RS256",
         "use": "sig",
-        "kid": settings.token_issuer,  # simple, stable kid
+        "kid": settings.token_issuer, 
         "n": _b64url_uint(numbers.n),
         "e": _b64url_uint(numbers.e),
     }

@@ -72,7 +72,6 @@ async def preview_invite(
     t = await _get_trail(db, trail_id)
     if not t or t.status not in (TrailStatus.PUBLISHED,):
         raise HTTPException(status_code=404, detail="Trail not available")
-    # Return minimal discoverable info
     return {
         "trail": {
             "id": str(t.id),
@@ -106,7 +105,6 @@ async def accept_invite(
 
     user_id = uuid.UUID(claims["sub"])
 
-    # already registered?
     existing = (await db.execute(select(Registration).where(
         Registration.trail_id == t.id, Registration.user_id == user_id
     ))).scalar_one_or_none()

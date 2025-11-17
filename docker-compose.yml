@@ -13,7 +13,7 @@ services:
     ports: ["6379:6379"]
     restart: unless-stopped
 
-  # --- Databases (one per service to keep schemas clean) ---
+  # --- Databases (one per service) ---
   auth-db:
     image: postgres:16
     container_name: auth-db
@@ -80,12 +80,9 @@ services:
       context: ./authentication-svc
     container_name: authentication-svc
     environment:
-      # DB
       DATABASE_URL: postgresql+psycopg_async://auth:authpwd@auth-db:5432/authentication
-      # JWT auto-gen OK for dev:
       ACCESS_TOKEN_EXP_MINUTES: 60
       REFRESH_TOKEN_EXP_MINUTES: 10080
-      # Optional: leave paths empty so it auto-generates ephemeral keys
       JWT_PRIVATE_KEY_PATH: ""
       JWT_PUBLIC_KEY_PATH: ""
       AUTO_WRITE_KEYS: "false"
@@ -117,7 +114,6 @@ services:
       DATABASE_URL: postgresql+psycopg_async://points:pointspwd@points-db:5432/points
       AUTH_JWKS_URL: http://authentication-svc:8001/auth/jwks
       TOKEN_ISSUER: authentication-svc
-      # NATS consumer (awards on checkins.recorded)
       NATS_URLS: nats://nats:4222
       NATS_SUBJECT_CHECKIN: checkins.recorded
       ENABLE_NATS_CONSUMER: "true"
