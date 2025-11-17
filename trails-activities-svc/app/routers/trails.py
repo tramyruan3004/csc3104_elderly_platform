@@ -265,6 +265,8 @@ async def create_trail(
         location=t.location,
         capacity=t.capacity,
         status=t.status.value,
+        created_at=t.created_at,
+        updated_at=t.updated_at,
     )
 
 @router.patch("/{trail_id}", response_model=TrailRead)
@@ -309,6 +311,8 @@ async def update_trail(
         location=t.location,
         capacity=t.capacity,
         status=t.status.value,
+        created_at=t.created_at,
+        updated_at=t.updated_at,
     )
 
 
