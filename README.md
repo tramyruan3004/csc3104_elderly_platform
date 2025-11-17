@@ -114,13 +114,15 @@ docker compose up -d authentication-svc trails-activities-svc qr-checkin-svc poi
 
 2) This launches:
 ```bash
-| Service | Port | Description |
-|---------|------|-------------|
-| `authentication-svc` | `8001` | Accounts, organisations, auth tokens |
-| `trails-activities-svc` | `8002` | Trails, registrations, invites |
-| `points-vouchers-rules-svc` | `8003` | Points ledger, vouchers |
-| `qr-checkin-svc` | `8004` | On-site check-ins |
-| `leaderboard-attendance-svc` | `8005` | Attendance metrics |
+|-----------------------------|--------|--------------------------------------|
+| Service                     | Port   | Description                          |
+|-----------------------------|--------|--------------------------------------|
+| `authentication-svc`        | `8001` | Accounts, organisations, auth tokens |
+| `trails-activities-svc`     | `8002` | Trails, registrations, invites       |
+| `points-vouchers-rules-svc` | `8003` | Points ledger, vouchers              |
+| `qr-checkin-svc`            | `8004` | On-site check-ins                    |
+| `leaderboard-attendance-svc`| `8005` | Attendance metrics                   |
+|-----------------------------|--------|--------------------------------------|
 ```
 
 3) Verify health if service is on/ running:
