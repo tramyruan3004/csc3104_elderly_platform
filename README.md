@@ -1,3 +1,5 @@
+# 🌟 Elderly Activity Trail & Bonding — Full System
+
 The **Elderly Activity Trail & Bonding Platform** is a full microservices system powering:
 - 👵 **Senior PWA** — User-facing progressive web app  
 - 🧑‍💼 **Organizer Dashboard** — Admin & staff management dashboard  
