@@ -13,12 +13,13 @@ This README gives you the **complete instructions** to run the entire system end
 
 ## Table of Contents
 
-- [Project Structure]
-- [What each service does]
-- [Prerequisites]
-- [Backend (Docker Compose)]
-- [Backend (Kubernetes with kind + ingress-nginx)]
-- [Frontend (cloud-project)]
+- Project Structure
+- What each service does
+- Prerequisites
+- Backend (Docker Compose)
+- Backend (Kubernetes with kind + ingress-nginx)
+- Frontend (cloud-project)
+- Quick End-to-End Test
 
 ## Project Structure
 ```bash
@@ -112,6 +113,7 @@ docker compose up -d authentication-svc trails-activities-svc qr-checkin-svc poi
 ```
 
 2) This launches:
+```bash
 | Service | Port | Description |
 |---------|------|-------------|
 | `authentication-svc` | `8001` | Accounts, organisations, auth tokens |
@@ -119,6 +121,7 @@ docker compose up -d authentication-svc trails-activities-svc qr-checkin-svc poi
 | `points-vouchers-rules-svc` | `8003` | Points ledger, vouchers |
 | `qr-checkin-svc` | `8004` | On-site check-ins |
 | `leaderboard-attendance-svc` | `8005` | Attendance metrics |
+```
 
 3) Verify health if service is on/ running:
 ```bash
@@ -306,8 +309,16 @@ Once everything is up:
 `Organizer Login → Create Organisation → Create Trail`
 `Senior Login → Register → Check-In → Points Update → Leaderboard Update`
 
-Each component will communicate correctly through:
-- Kubernetes ingress
-- JWT + JWKS validation
-- NATS event propagation
+> example:
+1. Organizer logs in → creates organisation
+2. Creates trail
+3. Senior logs in via PWA → registers
+4. Senior checks in via QR
+5. Points awarded
+6. Leaderboard updates in realtime
+
+All communication flows through:
+- JWT + JWKS
+- NATS events
 - Postgres micro-databases
+- Kubernetes ingress
