@@ -1,120 +1,124 @@
-# Five Services — Trails Platform
+The **Elderly Activity Trail & Bonding Platform** is a full microservices system powering:
+- 👵 **Senior PWA** — User-facing progressive web app  
+- 🧑‍💼 **Organizer Dashboard** — Admin & staff management dashboard  
+- ⚙️ **Backend Microservices** — Authentication, Trails, QR Check-In, Points, Leaderboard  
+- 🗄️ **Databases, NATS, Redis**  
+- 🚀 **Docker Compose** and **Kubernetes (kind + ingress-nginx)** deployment options  
 
-A microservices playground implementing authentication, organisations, trails/activities, QR check-ins, points & vouchers, and leaderboards — wired together with JWT, JWKS, NATS and Redis, and backed by Postgres (one DB per service). Ready for **Docker Compose** (local dev) and **Kubernetes** (kind/minikube).
+This README gives you the **complete instructions** to run the entire system end-to-end.
+
+---
 
 ## Table of Contents
 
-- [Repo layout](#repo-layout)
-- [What each service does](#what-each-service-does)
-- [How services talk (architecture)](#how-services-talk-architecture)
-- [Prerequisites](#prerequisites)
-- [Quick start method1 (Docker Compose)](#quick-start-docker-compose)
-- [Quick start method2 (Kubernetes with kind)](#quick-start-kubernetes-with-kind)
-- [Environments & key variables](#environments--key-variables)
-- [Health checks / Smoke tests](#health-checks--smoke-tests)
-- [Seeding the Cluster (Load sample data)](#seeding-the-cluster-sample-data)
-- [Common workflows](#common-workflows)
-- [Git submodules 101](#git-submodules-101)
-- [Troubleshooting](#troubleshooting)
+- [Project Structure]
+- [What each service does]
+- [Prerequisites]
+- [Backend (Docker Compose)]
+- [Backend (Kubernetes with kind + ingress-nginx)]
+- [Frontend (cloud-project)]
 
-
-## Repo layout
+## Project Structure
 ```bash
-five-services/
-├─ authentication-svc/ # Users, organisations, JWT auth, JWKS
-│ ├─ app/
-│ ├─ requirements.txt
-│ └─ Dockerfile
-├─ trails-activities-svc/ # Trails/activities, registrations, invitations
-│ ├─ app/
-│ ├─ requirements.txt
-│ └─ Dockerfile
-├─ qr-checkin-svc/ # Signed QR generation & scan, attendance; Redis rate-limit; publishes to NATS
-│ ├─ app/
-│ ├─ requirements.txt
-│ └─ Dockerfile
-├─ points-vouchers-rules-svc/ # Points ledger, rules, vouchers; consumes NATS check-in events
-│ ├─ app/
-│ ├─ requirements.txt
-│ └─ Dockerfile
-├─ leaderboard-attendance-svc/ # Materialized ranks, organiser attendance views; consumes NATS
-│ ├─ app/
-│ ├─ requirements.txt
-│ └─ Dockerfile
-├─ k8s/
-│ ├─ all.yaml # Namespace, NATS, Redis, 5x Postgres, 5x services
-│ └─ ingress.yaml # Single ingress routing for all services (optional)
-└─ docker-compose.yml # Local dev stack (NATS, Redis, 5x Postgres, 5x services)
+project-root/
+  │
+  ├── backend/ # Backend microservices + Docker + Kubernetes
+  │ ├── authentication-svc/
+  │ ├── trails-activities-svc/
+  │ ├── points-vouchers-rules-svc/
+  │ ├── qr-checkin-svc/
+  │ ├── leaderboard-attendance-svc/
+  │ ├── k8s/
+  │ │ ├── all.yaml
+  │ │ ├── ingress.yaml
+  │ │ └── kind-config.yaml
+  │ └── docker-compose.yml
+  └── frontend/ # Organiser dashboard + Senior Portal (pnpm) 
+  │ ├── apps/
+  │ │ ├── organizer-dashboard/ # Next.js 14
+  │ │ └── senior-pwa/ # Vite + React
+  │ ├── packages/
+  │ └── pnpm-lock.yaml
+  └──
 ```
 
 ## What each service does
 
 ### 1) `authentication-svc`
-- **Accounts & Orgs**: user sign-up/login with NRIC + passcode; organiser/admin can create organisations.
-- **JWT**: Access tokens (RS256) + refresh tokens.
-- **JWKS**: `/auth/jwks` exposes the public key so other services can validate tokens.
-- **DB**: `authentication` (users, organisations, refresh_tokens).
+- Handles user sign-up/login with **NRIC + passcode**
+- Issues **JWT access tokens** and **refresh tokens**
+- Exposes **JWKS** at `/auth/jwks` so other services can validate tokens
+- Manages:
+  - Users  
+  - Organisations  
+  - Refresh tokens  
+- Database: `authentication`
 
 ### 2) `trails-activities-svc`
-- **Trails**: CRUD trails under an organisation (capacity, schedule).
-- **Registrations**: attend_user self-register; organisers can approve/confirm until capacity is full.
-- **Registration Status**: lookup by user/trail.
-- **Invitations**: create signed invitation URLs for a trail.
-- **DB**: `trails` (trails, registrations, invites).
+- CRUD: create, update, publish, close trails
+- Registration management (approve / confirm / capacity rules)
+- Invitation & signed invite URL generation
+- Organisation-scoped records
+- Database: `trails`
 
 ### 3) `qr-checkin-svc`
-- **Signed QR**: short-TTL HMAC payloads for check-in sessions.
-- **Validate scans**: verify signature, ensure TTL/window valid, write attendance to its DB.
-- **Publishes NATS**: emits `checkins.recorded` event.
-- **Redis**: optional rate limiting & dedupe.
-- **DB**: `qr` (checkin_sessions, scans).
+- Generates signed QR codes (short TTL HMAC)
+- Validates QR scans  
+- Records check-ins into DB  
+- Publishes **NATS events**: `checkins.recorded`
+- Uses Redis for rate-limiting & deduplication
+- Database: `qr`
 
 ### 4) `points-vouchers-rules-svc`
-- **Points**: award points based on rules (consumes `checkins.recorded`).
-- **Vouchers**: create/redeem vouchers; org-scoped.
-- **Rules**: simple rules config (e.g., X points per check-in).
-- **DB**: `points` (ledger, balances, rules, vouchers).
+- Consumes NATS `checkins.recorded` events  
+- Awards points using rule engine  
+- Handles voucher creation, redemption  
+- Organisation-scoped points system
+- Database: `points`
 
 ### 5) `leaderboard-attendance-svc`
-- **Leaderboards**: system-wide & per-organisation, materialised and periodically rebuilt.
-- **Attendance Views**: list confirmed attendees by trail/org.
-- **Consumes NATS**: reacts to check-ins/awards to update ranks.
-- **DB**: `leaderboard` (attendance rollups, ranks).
+- Subscribes to NATS check-in / point-award events
+- Maintains real-time **leaderboards**
+- Generates **attendance rollups** per trail & per organisation
+- Database: `leaderboard`
 
 **Infra**
 - **NATS**: lightweight event bus (pub/sub).
 - **Redis**: rate-limit/cache/dedupe.
 - **Postgres**: one per service to keep schemas decoupled.
 
-## How services talk (architecture)
-
-- **Auth → Others**: All protected endpoints expect a `Bearer` **JWT**. Services verify the token using **JWKS** from `authentication-svc` (`/auth/jwks`) and the `iss` claim.
-- **Trails & Registrations**: `trails-activities-svc` enforces org scoping and capacity logic.
-- **QR → NATS**: When a scan is accepted, `qr-checkin-svc` *publishes* `checkins.recorded` with `{ user_id, trail_id, org_id, ts }`.
-- **Points & Leaderboard ← NATS**: `points-vouchers-rules-svc` and `leaderboard-attendance-svc` *subscribe* and update their DBs.
-- **Redis**: `qr-checkin-svc` optionally uses Redis for rate limiting/dup detection.
-
 ## Prerequisites
 
-- Docker Desktop (or Docker Engine)
+- **Git** (2.40+).
+- **Node.js** ≥ 18.17 and **pnpm** ≥ 8 (`npm install -g pnpm`).
+- **Python** ≥ 3.11 (optional; only needed if you run services outside Docker).
+- **PowerShell** 7 (default on Windows 11). All shell snippets below target PowerShell (`pwsh`).
+- **Docker Desktop** (v4.x or newer).
 - **For Kubernetes path**:
-  - `kubectl`
-  - **kind** (recommended) or Minikube
-  - (Optional) `helm` (for ingress-nginx install)
+  - **kind** (recommended) 
+  - **helm** (for ingress-nginx install)
 
+## Backend (Docker Compose)
 
-## Quick start (Docker Compose)
+> This is the recommended local production-like environment.
 
-> Easiest way to run all 5 services + NATS + Redis + 5 Postgres locally.
-
-1) From repo root:
+1) From project root:
 ```bash
-docker compose build
-docker compose up -d
-docker compose logs -f
+cd backend
+docker compose build authentication-svc trails-activities-svc qr-checkin-svc points-vouchers-rules-svc leaderboard-attendance-svc
+docker compose up -d authentication-svc trails-activities-svc qr-checkin-svc points-vouchers-rules-svc leaderboard-attendance-svc
 ```
 
-2) Verify health if service is on/ running:
+2) This launches:
+| Service | Port | Description |
+|---------|------|-------------|
+| `authentication-svc` | `8001` | Accounts, organisations, auth tokens |
+| `trails-activities-svc` | `8002` | Trails, registrations, invites |
+| `points-vouchers-rules-svc` | `8003` | Points ledger, vouchers |
+| `qr-checkin-svc` | `8004` | On-site check-ins |
+| `leaderboard-attendance-svc` | `8005` | Attendance metrics |
+
+3) Verify health if service is on/ running:
 ```bash
 curl -s http://localhost:8001/health
 curl -s http://localhost:8002/health
@@ -123,24 +127,29 @@ curl -s http://localhost:8004/health
 curl -s http://localhost:8005/health
 ```
 
-3) Rebuild a single service:
+- Follow logs for a particular container: `docker compose logs -f authentication-svc`.
+- FastAPI docs (health check) are at `http://localhost:<port>/docs` (repeat for each service).
+
+4) Rebuild a single service:
 ```bash
-docker compose build qr-checkin-svc
-docker compose up -d qr-checkin-svc
+docker compose build <service>
+docker compose up -d <service>
 ```
 
-4) Stop:
+5) Stop:
 ```bash
 docker compose down
 # Optional: prune dangling images to save space
 docker image prune -f
 ```
-## Quick start (Kubernetes with kind)
+
+## Backend (Kubernetes with kind + ingress-nginx)
 
 > Recommended local cluster flow. Uses k8s/all.yaml to deploy infra + DBs + apps. Add ingress for a single entry point.
 
-1) Create cluster:
+1) Create cluster from project root:
 ```bash
+cd backend
 kind create cluster --name play --config k8s/kind-config.yaml
 ```
 
@@ -185,13 +194,16 @@ kind load docker-image leaderboard-attendance-svc:latest --name play
 4) Apply manifests:
 ```bash
 kubectl apply -f k8s/all.yaml
-kubectl -n play get pods
-kubectl -n play get svc
+kubectl -n play get pods -w
+```
+> Wait for all pods to reach Running (1/1).
 
+5) Apply ingress routing
+```bash
 kubectl apply -f k8s/ingress.yaml
 ```
 
-5) Health via ingress with a specified port (single endpoint) - need to wait a while:
+6) Health via ingress with a specified port (single endpoint) - need to wait a while:
 ```bash
 curl -i http://localhost:8080/auth/health
 curl -i http://localhost:8080/trails/health
@@ -199,8 +211,6 @@ curl -i http://localhost:8080/points/health
 curl -i http://localhost:8080/qr/health
 curl -i http://localhost:8080/leaderboard/health
 ```
-6) (Optional) to load sample data 
-Go to [#seeding-the-cluster-sample-data.](#seeding-the-cluster-sample-data)
 
 **After reboot:**
 - Start Docker Desktop
@@ -227,278 +237,75 @@ kubectl get deploy -n play -o name | xargs kubectl rollout restart -n play
 kubectl get pods -n play -w
 ```
 
-## Environments & key variables
-Each service accepts env vars via compose or K8s manifests. Defaults are dev-friendly (ephemeral JWT keys in `authentication-svc`, no secrets mounted).
+## Frontend (cloud-project)
 
-**Common:**
-- `AUTH_JWKS_URL` — e.g., `http://authentication-svc:8001/auth/jwks`
-- `TOKEN_ISSUER` — usually `authentication-svc`
-- `DATABASE_URL` — async psycopg: `postgresql+psycopg_async://user:pwd@host:5432/db`
-
-**authentication-svc:**
-- `ACCESS_TOKEN_EXP_MINUTES` — default `60`
-- `REFRESH_TOKEN_EXP_MINUTES` — default `10080` (7 days)
-- `JWT_PRIVATE_KEY_PATH` / `JWT_PUBLIC_KEY_PATH` — optional; leave empty for auto-generated dev keys
-
-**qr-checkin-svc:**
-- `QR_SECRET` — HMAC secret for QR payloads (dev default used, change in production)
-- `QR_TTL_SECONDS` — default `120`
-- `REDIS_URL` — e.g., `redis://redis:6379/0`
-- `RL_ENABLED` — enable/disable rate limiting
-- `RL_WINDOW_SECONDS` — rate-limit time window
-- `RL_MAX_REQS` — max requests per window
-- `NATS_URLS` — NATS server URL(s)
-- `NATS_SUBJECT_CHECKIN` — NATS subject for publishing check-in events
-- `USE_NATS_FOR_POINTS` — set to `"true"` to publish check-ins to NATS only
-
-**points-vouchers-rules-svc:**
-- `ENABLE_NATS_CONSUMER` — `"true"` to enable NATS event consumption
-- `NATS_URLS` — NATS server URL(s)
-- `NATS_SUBJECT_CHECKIN` — NATS subject for listening to check-in events
-
-**leaderboard-attendance-svc:**
-- `ENABLE_NATS_CONSUMER` — `"true"` to enable NATS event consumption
-- `NATS_URLS` — NATS server URL(s)
-- `NATS_SUBJECT_CHECKIN` — NATS subject for listening to check-in events
-- `SCORING_MODE` — scoring type, e.g., `checkins`
-- `RANKS_REBUILD_INTERVAL_SEC` — leaderboard rebuild interval in seconds (e.g., `60`)
-
-## 🩺 Health Checks / Smoke Tests
-
-**With Compose (direct ports):**
+Install workspace dependencies:
 ```bash
-http://localhost:8001/health
-http://localhost:8002/health
-http://localhost:8003/health
-http://localhost:8004/health
-http://localhost:8005/health
+cd frontend
+pnpm install
 ```
 
-**With K8s Ingress (one entry):**
+# Organizer Dashboard (Next.js)
+
+1) Start the dashboard:
 ```bash
-http://localhost:8080/auth/health
-http://localhost:8080/trails/health
-http://localhost:8080/points/health
-http://localhost:8080/qr/health
-http://localhost:8080/leaderboard/health
+cd frontend/apps/organizer-dashboard
+pnpm dev
+```
+> Open 👉 http://localhost:3000
+
+2) Required .env.local for Docker
+```bash
+NEXT_PUBLIC_AUTH_API=http://localhost:8001
+NEXT_PUBLIC_TRAILS_API=http://localhost:8002
+NEXT_PUBLIC_POINTS_API=http://localhost:8003
+NEXT_PUBLIC_QR_API=http://localhost:8004
+NEXT_PUBLIC_LEADERBOARD_API=http://localhost:8005
 ```
 
-## 🔁 Common Workflows
-**Build & restart one service (Compose)**
+3) Required .env.local for Kubernetes
 ```bash
-docker compose build trails-activities-svc
-docker compose up -d trails-activities-svc
+NEXT_PUBLIC_AUTH_API=http://localhost:8080/auth
+NEXT_PUBLIC_TRAILS_API=http://localhost:8080/trails
+NEXT_PUBLIC_POINTS_API=http://localhost:8080/points
+NEXT_PUBLIC_QR_API=http://localhost:8080/qr
+NEXT_PUBLIC_LEADERBOARD_API=http://localhost:8080/leaderboard
 ```
 
-**Rebuild image & roll out (K8s + kind)**
+# Senior PWA (Vite)
+
+1) Start the dashboard:
 ```bash
-docker build -t qr-checkin-svc:latest ./qr-checkin-svc
-kind load docker-image qr-checkin-svc:latest --name play
-kubectl -n play rollout restart deploy/qr-checkin-svc
-kubectl -n play rollout status deploy/qr-checkin-svc
+cd frontend/apps/organizer-dashboard
+pnpm dev
+```
+> Open 👉 http://localhost:5173
+
+2) Required .env.local for Docker
+```bash
+VITE_AUTH_API=http://localhost:8001
+VITE_TRAILS_API=http://localhost:8002
+VITE_POINTS_API=http://localhost:8003
+VITE_QR_API=http://localhost:8004
+VITE_LEADERBOARD_API=http://localhost:8005
 ```
 
-**Follow logs (K8s)**
+3) Required .env.local for Kubernetes
 ```bash
-kubectl -n play logs deploy/points-vouchers-rules-svc -c app -f
+VITE_AUTH_API=http://localhost:8080/auth
+VITE_TRAILS_API=http://localhost:8080/trails
+VITE_POINTS_API=http://localhost:8080/points
+VITE_QR_API=http://localhost:8080/qr
+VITE_LEADERBOARD_API=http://localhost:8080/leaderboard
 ```
 
-## Seeding the Cluster (Load sample data)
-**Files `k8s/seed.yaml`**
-Contains:
-- `ConfigMap/seed-script` with `seed.sh` (the script).
-- `Job/seed-data` which runs the script once.
+## Quick End-to-End Test
+Once everything is up:
+`Organizer Login → Create Organisation → Create Trail`
+`Senior Login → Register → Check-In → Points Update → Leaderboard Update`
 
-> Note: ConfigMap volumes are read-only—the Job runs the script via `/bin/sh /seed/seed.sh` (no `chmod`).
-
-**One-time Setup Checks**
-Ensure the `play` namespace and services are up:
-```bash
-kubectl get ns
-kubectl -n play get pods
-kubectl -n play get svc
-```
-If using NATS-driven points:
-- `qr-checkin-svc` must have `USE_NATS_FOR_POINTS=true`
-- `points-vouchers-rules-svc` must have `ENABLE_NATS_CONSUMER=true`
-- Both must share valid `NATS_URLS` and subject.
-(These are already set in the provided manifests if you used the repo defaults.)
-
-**Run (or Re-run) the Seed**
-Jobs don’t automatically re-run on apply. Delete and recreate:
-```bash
-# (Re)create the Job
-kubectl -n play delete job/seed-data || true
-kubectl apply -f k8s/seed.yaml
-
-# watch logs
-kubectl -n play logs -f job/seed-data
-```
-
-**Common “works for me” checks**
-If the job fails early:
-```bash
-kubectl -n play describe job/seed-data
-kubectl -n play get pods -l job-name=seed-data
-kubectl -n play describe pod <seed-pod-name>
-```
-
-If the script can’t reach services, confirm health from inside the cluster:
-```bash
-kubectl -n play run curl --image=alpine:3.20 -it --rm -- sh -lc '
-  apk add --no-cache curl >/dev/null
-  for u in \
-    http://authentication-svc.play.svc.cluster.local:8001/health \
-    http://trails-activities-svc.play.svc.cluster.local:8002/health \
-    http://points-vouchers-rules-svc.play.svc.cluster.local:8003/health \
-    http://qr-checkin-svc.play.svc.cluster.local:8004/health \
-    http://leaderboard-attendance-svc.play.svc.cluster.local:8005/health
-  ; do echo "GET $u"; curl -sf $u || exit 1; echo; done
-'
-```
-
-## 🧩 Git Submodules 101
-> Only relevant if some service folders are separate repos referenced as submodules.
-If this repo is purely self-contained, you can skip this section.
-
-**Clone a repo with submodules**
-```bash
-git clone <repo-url>
-cd five-services
-git submodule update --init --recursive
-```
-
-**Pull latest changes for all submodules**
-```bash
-git submodule update --remote --merge --recursive
-# OR for a fresh sync:
-git submodule foreach --recursive 'git fetch && git checkout main && git pull'
-```
-
-**Add a new submodule (example)**
-```bash
-git submodule add https://github.com/you/qr-checkin-svc.git qr-checkin-svc
-git commit -m "Add qr-checkin-svc as submodule"
-```
-
-**Push changes in a submodule**
-```bash
-cd qr-checkin-svc
-# make code changes, then:
-git add .
-git commit -m "Feature X"
-git push origin main
-# then go back to parent and commit the new submodule SHA
-cd ..
-git add qr-checkin-svc
-git commit -m "Bump qr-checkin-svc submodule pointer"
-git push
-```
-
-**Remove a submodule**
-```bash
-git submodule deinit -f qr-checkin-svc
-git rm -f qr-checkin-svc
-rm -rf .git/modules/qr-checkin-svc
-git commit -m "Remove submodule qr-checkin-svc"
-```
-
-## ⚙️ Troubleshooting
-**🐳 ImagePullBackOff on K8s**
-The cluster can’t find your images.
-If using `kind`, run:
-```bash
-kind load docker-image <image>:latest --name play
-```
-Or push your images to a registry and set:
-```bash
-imagePullPolicy: Always
-```
-
-**🔐 JWT / JWKS validation fails**
-- Ensure AUTH_JWKS_URL points to the cluster service DNS (K8s) or localhost ports (Compose)
-- Ensure tokens have iss=authentication-svc
-
-**🧠 psycopg_async lib error**
-And ensure your env uses:
-```bash
-DATABASE_URL=postgresql+psycopg_async://user:pwd@host:5432/db
-```
-
-**⚡ Duplicate ports in Docker Desktop**
-Avoid running Docker Compose and Kubernetes port-forwards on the same ports simultaneously.
-Prefer K8s ingress for a single unified endpoint (`8080`).
-
-**🧹 Dangling `<none>` images**
-Safe cleanup:
-```bash
-docker image prune -f
-```
-Full cleanup (careful, removes all):
-```bash
-docker system prune -a
-```
-
-**Ephemeral psql pod - access to db**
-```bash
-# wait until the pod is Running
-kubectl -n play get pods -l app=auth-db
-
-# exec a shell and run psql inside the container
-kubectl -n play exec -it deploy/auth-db -- bash -lc 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -h localhost'
-```
-  curl -s http://localhost:8080/auth/auth/signup \
-    -H "Content-Type: application/json" \
-    -d '{
-      "name": "Kelvin Spark",
-      "nric": "K1234567W",
-      "passcode": "23081999",
-      "role": "attend_user"
-    }' | jq
-
-  curl -s http://localhost:8080/auth/auth/signup \
-    -H "Content-Type: application/json" \
-    -d '{
-      "name": "Tony Ark",
-      "nric": "O1234567N",
-      "passcode": "23081999",
-      "role": "organiser"
-    }' | jq
-
-  LOGIN_JSON_ORG=$(curl -s http://localhost:8080/auth/auth/login \
-    -H "Content-Type: application/json" \
-    -d '{"nric":"O1234567N","passcode":"23081999"}')
-
-  ACCESS_ORG=$(echo "$LOGIN_JSON_ORG" | jq -r '.tokens.access_token')
-
-  curl -s http://localhost:8080/auth/orgs \
-    -H "Authorization: Bearer $ACCESS_ORG" \
-    -H "Content-Type: application/json" \
-    -d '{"name": "Avengers Exploration"}' | jq
-
-  ORG_ID="133680a4-ceba-4bab-bc22-7cc7757bdcf7" 
-
-  curl -s http://localhost:8080/trails/trails/orgs/$ORG_ID \
-    -H "Authorization: Bearer $ACCESS_ORG" \
-    -H "Content-Type: application/json" \
-    -d '{
-        "title": "Punggol District Exploration",
-        "description": "A short engaging tour to explore the latest technological District",
-        "starts_at": "2025-11-27T06:00:00Z",
-        "ends_at": "2025-11-30T09:00:00Z",
-        "location": "Punggol Coast",
-        "capacity": 5
-    }' | jq
-
-  LOGIN_JSON_ATT=$(curl -s http://localhost:8080/auth/auth/login \
-    -H "Content-Type: application/json" \
-    -d '{"nric":"K1234567W","passcode":"23081999"}')
-
-  ACCESS_ATT=$(echo "$LOGIN_JSON_ATT" | jq -r '.tokens.access_token')
-  
-  TRAIL_ID="4ba8b293-4a09-43c3-997f-d134ba7c91bc"
-
-  curl -s http://localhost:8080/trails/registrations/trails/$TRAIL_ID/self \
-    -H "Authorization: Bearer $ACCESS_ATT" \
-    -H "Content-Type: application/json" \
-    -d '{"note":"first timer"}' | jq
+Each component will communicate correctly through:
+- Kubernetes ingress
+- JWT + JWKS validation
+- NATS event propagation
+- Postgres micro-databases
