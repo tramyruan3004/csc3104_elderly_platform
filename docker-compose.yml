@@ -4,7 +4,7 @@ services:
     image: nats:2
     container_name: nats
     ports: ["4222:4222"]
-    command: ["-js"] # enable JetStream in case you upgrade later
+    command: ["-js"] 
     restart: unless-stopped
 
   redis:

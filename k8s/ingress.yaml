@@ -10,40 +10,49 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
-  - http:
-      paths:
-      - path: /auth(/|$)(.*)
-        pathType: ImplementationSpecific
-        backend:
-          service:
-            name: authentication-svc
-            port:
-              number: 8001
-      - path: /trails(/|$)(.*)
-        pathType: ImplementationSpecific
-        backend:
-          service:
-            name: trails-activities-svc
-            port:
-              number: 8002
-      - path: /points(/|$)(.*)
-        pathType: ImplementationSpecific
-        backend:
-          service:
-            name: points-vouchers-rules-svc
-            port:
-              number: 8003
-      - path: /qr(/|$)(.*)
-        pathType: ImplementationSpecific
-        backend:
-          service:
-            name: qr-checkin-svc
-            port:
-              number: 8004
-      - path: /leaderboard(/|$)(.*)
-        pathType: ImplementationSpecific
-        backend:
-          service:
-            name: leaderboard-attendance-svc
-            port:
-              number: 8005
+    - http:
+        paths:
+          # authentication-svc → /auth/...
+          - path: /auth(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: authentication-svc
+                port:
+                  number: 8001
+
+          # trails-activities-svc → /trails/...
+          - path: /trails(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: trails-activities-svc
+                port:
+                  number: 8002
+
+          # points-vouchers-rules-svc → /points/...
+          - path: /points(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: points-vouchers-rules-svc
+                port:
+                  number: 8003
+
+          # qr-checkin-svc → /qr/...
+          - path: /qr(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: qr-checkin-svc
+                port:
+                  number: 8004
+
+          # leaderboard-attendance-svc → /leaderboard/...
+          - path: /leaderboard(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: leaderboard-attendance-svc
+                port:
+                  number: 8005
