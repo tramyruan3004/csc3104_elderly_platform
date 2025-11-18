@@ -17,7 +17,7 @@ This README gives you the **complete instructions** to run the entire system end
 - What each service does
 - Prerequisites
 - Backend (Docker Compose)
-- Backend (Kubernetes with kind + ingress-nginx)
+- Backend (Kubernetes with kind + ingress-nginx - Dockerhub images link)
 - Frontend (cloud-project)
 - Quick End-to-End Test
 
@@ -47,7 +47,7 @@ project-root/
 
 ## What each service does
 
-### 1) `authentication-svc`
+# 1) `authentication-svc`
 - Handles user sign-up/login with **NRIC + passcode**
 - Issues **JWT access tokens** and **refresh tokens**
 - Exposes **JWKS** at `/auth/jwks` so other services can validate tokens
@@ -57,14 +57,14 @@ project-root/
   - Refresh tokens  
 - Database: `authentication`
 
-### 2) `trails-activities-svc`
+# 2) `trails-activities-svc`
 - CRUD: create, update, publish, close trails
 - Registration management (approve / confirm / capacity rules)
 - Invitation & signed invite URL generation
 - Organisation-scoped records
 - Database: `trails`
 
-### 3) `qr-checkin-svc`
+# 3) `qr-checkin-svc`
 - Generates signed QR codes (short TTL HMAC)
 - Validates QR scans  
 - Records check-ins into DB  
@@ -72,14 +72,14 @@ project-root/
 - Uses Redis for rate-limiting & deduplication
 - Database: `qr`
 
-### 4) `points-vouchers-rules-svc`
+# 4) `points-vouchers-rules-svc`
 - Consumes NATS `checkins.recorded` events  
 - Awards points using rule engine  
 - Handles voucher creation, redemption  
 - Organisation-scoped points system
 - Database: `points`
 
-### 5) `leaderboard-attendance-svc`
+# 5) `leaderboard-attendance-svc`
 - Subscribes to NATS check-in / point-award events
 - Maintains real-time **leaderboards**
 - Generates **attendance rollups** per trail & per organisation
@@ -184,13 +184,24 @@ kubectl -n ingress-nginx get pods
 ```
 
 3) Build + load images locally:
+Option A: build images from source code
 ```bash
 docker build -t authentication-svc:latest ./authentication-svc
 docker build -t trails-activities-svc:latest ./trails-activities-svc
 docker build -t qr-checkin-svc:latest ./qr-checkin-svc
 docker build -t points-vouchers-rules-svc:latest ./points-vouchers-rules-svc
 docker build -t leaderboard-attendance-svc:latest ./leaderboard-attendance-svc
+```
 
+Option B: pull from Docker hub (access via the links)
+- authentication-svc              | https://hub.docker.com/layers/tramyruan3004/cloud_grp6_authentication-svc/v1/images/sha256:3e3c22c44bea410ecba8d58b2013757ee32170bc8d088ef6cfac26bced9c03eb?uuid=9BEC596D-49A1-4960-A6D7-83DCEB9240A2
+- trails-activities-svc           | https://hub.docker.com/layers/tramyruan3004/cloud_grp6_trails-activities-svc/v1/images/sha256:fd2e34d2faa8dfb3a63d4ae7fef724f03910ddfd8ec19f94fd60d5954e45fac1?uuid=9BEC596D-49A1-4960-A6D7-83DCEB9240A2
+- qr-checkin-svc                  | https://hub.docker.com/layers/tramyruan3004/cloud_grp6_qr-checkin-svc/v1/images/sha256:543265232882e7d8f9a21a1a3df709dff44a04ebeec99bd0f44a4b392aa07e03?uuid=9BEC596D-49A1-4960-A6D7-83DCEB9240A2
+- points-vouchers-rules-svc       | https://hub.docker.com/layers/tramyruan3004/cloud_grp6_points-vouchers-rules-svc/v1/images/sha256:e6f4cfb8dff3749635b96abb5578efe88e536334758ea88bbcffd5a0cbdc890e?uuid=9BEC596D-49A1-4960-A6D7-83DCEB9240A2
+- leaderboard-attendance-svc      | https://hub.docker.com/layers/tramyruan3004/cloud_grp6_leaderboard-attendance-svc/v1/images/sha256:21661027c21645557fc0125edbef6851e60f8ded19bf98f4ce11670d3722577b?uuid=9BEC596D-49A1-4960-A6D7-83DCEB9240A2
+
+Load the images:
+```bash
 kind load docker-image authentication-svc:latest --name play
 kind load docker-image trails-activities-svc:latest --name play
 kind load docker-image qr-checkin-svc:latest --name play
